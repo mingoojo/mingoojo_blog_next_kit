@@ -9,6 +9,8 @@
 !/.yarn/plugins
 !/.yarn/sdks
 
+.vscode
+
 # testing
 /coverage
 
