@@ -11,6 +11,7 @@ import Footer from '@/components/Footer'
 import siteMetadata from '@/data/siteMetadata'
 import { ThemeProviders } from './theme-providers'
 import { Metadata } from 'next'
+import Script from 'next/script'
 
 const space_grotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -94,6 +95,43 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
       <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
       <link rel="alternate" type="application/rss+xml" href={`${basePath}/feed.xml`} />
+
+      {/* ⬇ 전역 CSS로 선택/드래그 기본 차단 + 예외 클래스 제공 */}
+      <style
+        // SSR/CSR 일치. 정적 CSS라 hydration 문제 없음
+        dangerouslySetInnerHTML={{
+          __html: `
+          html, body, * {
+            -webkit-user-drag: none;
+          }
+          html, body {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;           /* 전체 선택 방지 */
+          }
+          /* 입력 가능한 곳은 허용 */
+          input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * {
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+          }
+          /* 선택 허용이 필요한 특정 영역에 붙여 쓰는 유틸 */
+          .allow-select, .allow-select * {
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+          }
+          /* 이미지 드래그 방지 */
+          img {
+            pointer-events: none;
+          }
+          `,
+        }}
+      />
+
       <body
         className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-950 dark:text-white"
         suppressHydrationWarning
@@ -108,6 +146,51 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Footer />
           </SectionContainer>
         </ThemeProviders>
+
+        {/* ⬇ 복사/우클릭/드래그 등 이벤트 차단 (입력/에디터는 예외) */}
+        <Script id="guard-copy-drag" strategy="afterInteractive">
+          {`
+            (function () {
+              const isEditable = (el) => {
+                if (!el) return false;
+                const tag = el.tagName?.toLowerCase();
+                const editable =
+                  el.isContentEditable ||
+                  tag === 'input' ||
+                  tag === 'textarea' ||
+                  el.closest('[contenteditable="true"]');
+                return !!editable;
+              };
+
+              const block = (e) => {
+                if (isEditable(e.target)) return; // 입력 영역은 허용
+                e.preventDefault();
+              };
+
+              // 마우스 관련
+              document.addEventListener('contextmenu', block, { capture: true });
+              document.addEventListener('dragstart', block, { capture: true });
+              document.addEventListener('selectstart', block, { capture: true });
+
+              // 클립보드 관련
+              document.addEventListener('copy', block, { capture: true });
+              document.addEventListener('cut', block, { capture: true });
+
+              // 키보드 단축키(Ctrl/Cmd+C / X / S / P / U 등) - 입력창 예외
+              document.addEventListener('keydown', (e) => {
+                if (isEditable(e.target)) return;
+                const mod = e.ctrlKey || e.metaKey;
+                if (
+                  (mod && ['c','x','s','p','u','a'].includes(e.key.toLowerCase())) ||
+                  e.key === 'PrintScreen'
+                ) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }, { capture: true });
+            })();
+                      `}
+        </Script>
       </body>
     </html>
   )
