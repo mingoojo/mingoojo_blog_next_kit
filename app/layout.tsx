@@ -68,69 +68,64 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${space_grotesk.variable} scroll-smooth`}
       suppressHydrationWarning
     >
-      <link
-        rel="apple-touch-icon"
-        sizes="76x76"
-        href={`${basePath}/static/favicons/apple-touch-icon.png`}
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="32x32"
-        href={`${basePath}/static/favicons/favicon-32x32.png`}
-      />
-      <link
-        rel="icon"
-        type="image/png"
-        sizes="16x16"
-        href={`${basePath}/static/favicons/favicon-16x16.png`}
-      />
-      <link rel="manifest" href={`${basePath}/static/favicons/site.webmanifest`} />
-      <link
-        rel="mask-icon"
-        href={`${basePath}/static/favicons/safari-pinned-tab.svg`}
-        color="#5bbad5"
-      />
-      <meta name="msapplication-TileColor" content="#000000" />
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
-      <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
-      <link rel="alternate" type="application/rss+xml" href={`${basePath}/feed.xml`} />
+      <head>
+        <link
+          rel="apple-touch-icon"
+          sizes="76x76"
+          href={`${basePath}/static/favicons/apple-touch-icon.png`}
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href={`${basePath}/static/favicons/favicon-32x32.png`}
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="16x16"
+          href={`${basePath}/static/favicons/favicon-16x16.png`}
+        />
+        <link rel="manifest" href={`${basePath}/static/favicons/site.webmanifest`} />
+        <link
+          rel="mask-icon"
+          href={`${basePath}/static/favicons/safari-pinned-tab.svg`}
+          color="#5bbad5"
+        />
+        <meta name="msapplication-TileColor" content="#000000" />
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
+        <link rel="alternate" type="application/rss+xml" href={`${basePath}/feed.xml`} />
 
-      {/* ⬇ 전역 CSS로 선택/드래그 기본 차단 + 예외 클래스 제공 */}
-      <style
-        // SSR/CSR 일치. 정적 CSS라 hydration 문제 없음
-        dangerouslySetInnerHTML={{
-          __html: `
-          html, body, * {
-            -webkit-user-drag: none;
-          }
-          html, body {
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
-            user-select: none;           /* 전체 선택 방지 */
-          }
-          /* 입력 가능한 곳은 허용 */
-          input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * {
-            -webkit-user-select: text;
-            -moz-user-select: text;
-            -ms-user-select: text;
-            user-select: text;
-          }
-          /* 선택 허용이 필요한 특정 영역에 붙여 쓰는 유틸 */
-          .allow-select, .allow-select * {
-            -webkit-user-select: text !important;
-            -moz-user-select: text !important;
-            -ms-user-select: text !important;
-            user-select: text !important;
-          }
-          /* 이미지 드래그 방지 */
-          img {
-            pointer-events: none;
-          }
+        {/* 전역 CSS로 선택/드래그 기본 차단 + 예외 클래스 제공 */}
+        <style
+          // 정적 CSS라 hydration 문제 없음
+          dangerouslySetInnerHTML={{
+            __html: `
+            html, body, * { -webkit-user-drag: none; }
+            html, body {
+              -webkit-user-select: none;
+              -moz-user-select: none;
+              -ms-user-select: none;
+              user-select: none;
+            }
+            input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * {
+              -webkit-user-select: text;
+              -moz-user-select: text;
+              -ms-user-select: text;
+              user-select: text;
+            }
+            .allow-select, .allow-select * {
+              -webkit-user-select: text !important;
+              -moz-user-select: text !important;
+              -ms-user-select: text !important;
+              user-select: text !important;
+            }
+            img { pointer-events: none; }
           `,
-        }}
-      />
+          }}
+        />
+      </head>
 
       <body
         className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-950 dark:text-white"
@@ -189,9 +184,72 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 }
               }, { capture: true });
             })();
-                      `}
+            `}
         </Script>
       </body>
     </html>
   )
 }
+
+//  <link
+//       rel="apple-touch-icon"
+//       sizes="76x76"
+//       href={`${basePath}/static/favicons/apple-touch-icon.png`}
+//     />
+//     <link
+//       rel="icon"
+//       type="image/png"
+//       sizes="32x32"
+//       href={`${basePath}/static/favicons/favicon-32x32.png`}
+//     />
+//     <link
+//       rel="icon"
+//       type="image/png"
+//       sizes="16x16"
+//       href={`${basePath}/static/favicons/favicon-16x16.png`}
+//     />
+//     <link rel="manifest" href={`${basePath}/static/favicons/site.webmanifest`} />
+//     <link
+//       rel="mask-icon"
+//       href={`${basePath}/static/favicons/safari-pinned-tab.svg`}
+//       color="#5bbad5"
+//     />
+//     <meta name="msapplication-TileColor" content="#000000" />
+//     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
+//     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
+//     <link rel="alternate" type="application/rss+xml" href={`${basePath}/feed.xml`} />
+
+//     {/* ⬇ 전역 CSS로 선택/드래그 기본 차단 + 예외 클래스 제공 */}
+//     <style
+//       dangerouslySetInnerHTML={{
+//         __html: `
+//         html, body, * {
+//           -webkit-user-drag: none;
+//         }
+//         html, body {
+//           -webkit-user-select: none;
+//           -moz-user-select: none;
+//           -ms-user-select: none;
+//           user-select: none;           /* 전체 선택 방지 */
+//         }
+//         /* 입력 가능한 곳은 허용 */
+//         input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * {
+//           -webkit-user-select: text;
+//           -moz-user-select: text;
+//           -ms-user-select: text;
+//           user-select: text;
+//         }
+//         /* 선택 허용이 필요한 특정 영역에 붙여 쓰는 유틸 */
+//         .allow-select, .allow-select * {
+//           -webkit-user-select: text !important;
+//           -moz-user-select: text !important;
+//           -ms-user-select: text !important;
+//           user-select: text !important;
+//         }
+//         /* 이미지 드래그 방지 */
+//         img {
+//           pointer-events: none;
+//         }
+//         `,
+//       }}
+//     />

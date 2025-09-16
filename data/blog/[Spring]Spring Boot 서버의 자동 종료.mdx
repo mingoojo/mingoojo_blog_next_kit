@@ -1,0 +1,175 @@
+---
+title: Spring Boot 서버의 자동 종료
+date: '2025-09-16'
+tags: ['spring']
+draft: false
+summary: Example of a markdown file with code blocks and syntax highlighting
+---
+
+요즘 Spring Boot를 공부하는데 프로젝트를 하다가 재밌는 현상을 발견했다.
+
+### 1 단순한 Spring Boot 애플리케이션
+
+```java
+package org.example.codingapple;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class CodingappleApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(CodingappleApplication.class, args);
+        System.out.println(123);
+    }
+}
+```
+
+단순한 메인 클래스만 실행했을 땐 콘솔에 123이 출력되고 바로 프로그램이 종료되지만,  
+`@Controller` 클래스 하나를 추가했더니 이번엔 서버가 꺼지지 않고 계속 켜져 있는 것이다.
+
+---
+
+### 2 @Controller가 추가된 경우
+
+```java
+package org.example.codingapple;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+@Controller
+public class BasicController {
+
+    @GetMapping("/")
+    @ResponseBody
+    public String index() {
+        return "Hello World";
+    }
+}
+```
+
+이 코드를 프로젝트에 추가하고 실행하면 이번에는 상황이 다르다.  
+• 콘솔에 메시지가 출력될 뿐 아니라  
+• 내장 톰캣 서버가 실행되고  
+• localhost:8080에서 `HTTP` 요청을 기다리면서 프로그램이 종료되지 않는다.
+
+---
+
+#### 🤔 왜 이런 차이가 생길까?
+
+**핵심: spring-boot-starter-web + @Controller**
+
+Spring Boot는 spring-boot-starter-web 의존성이 존재하고,  
+`@Controller`, `@RestController`, `@GetMapping` 같은 **웹 관련 빈(Bean)**이 등록되면
+
+“이건 웹 서버가 필요하구나!”
+
+라고 판단하고 👉 **내장 웹 서버(Tomcat)**를 자동으로 실행해서 대기 상태로 전환한다.
+
+반대로, 이런 컨트롤러가 없고 단순한 `main()` 메서드에서만 실행된다면  
+웹 요청을 받을 필요가 없으므로 Spring Boot는 프로그램을 바로 종료해버린다.
+
+---
+
+#### 🤔 실제로 컨트롤러를 삭제했는데도 서버가 계속 켜진다면?
+
+내가 겪은 상황인데, 컨트롤러 클래스를 `src` 디렉터리에서 삭제했는데도 여전히 톰캣이 실행되면서 서버가 꺼지지 않았다. 이럴 땐 다음을 확인해보자:
+
+**원인 1: 빌드된 .class 파일이 여전히 존재할 수 있음**
+
+IntelliJ나 Gradle은 컴파일된 클래스 파일을 다음 경로에 저장한다:
+
+• build/  
+• out/production/ (IntelliJ 전용)
+
+```bash
+rm -rf build/ out/
+./gradlew clean bootRun
+```
+
+위 명령으로 완전히 클린 빌드를 해주면 진짜 삭제가 반영된다.
+
+**원인 2: spring-boot-starter-web 의존성이 존재**
+
+```java
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+}
+```
+
+이 의존성이 존재하면 컨트롤러가 없어도 기본적으로 웹 서버가 켜진다!
+
+Spring Boot는 DispatcherServlet 등 웹 기본 구조를 자동 구성하며,  
+컨트롤러가 없어도 “빈 웹 서버”로 포트 8080을 열고 대기한다.
+
+이걸 삭제해서 새로 빌드하면 웹서버를 가동하지 않는다.
+
+---
+
+**🤔 `@ResponseBody` 는 어떤 역할?**
+
+```java
+@GetMapping("/")
+@ResponseBody
+public String index() {
+    return "Hello World";
+}
+```
+
+@ResponseBody는 해당 메서드의 리턴 값을 그대로 HTTP 응답 body에 넣으라는 의미다.  
+"Hello World" 문자열이 템플릿 파일로 해석되지 않고,  
+클라이언트에게 그대로 문자열로 전달된다.
+
+---
+
+**🤔 참고: `@RestController`는?**
+
+```java
+@RestController
+public class ApiController {
+    @GetMapping("/")
+    public String index() {
+        return "Hello";
+    }
+}
+```
+
+• @RestController = @Controller + @ResponseBody  
+• JSON 혹은 문자열 응답을 만들 때 주로 사용
+
+**그럼 템플릿 파일은 언제 렌더링되는 걸까?**
+
+Spring Boot에서 다음과 같은 코드를 작성하면:
+
+```java
+@Controller
+public class PageController {
+    @GetMapping("/")
+    public String index() {
+        return "index";
+    }
+}
+```
+
+이 메서드는 `src/main/resources/templates/index.html` 파일을 찾아서 렌더링하려고 한다.  
+하지만 아무런 설정 없이 이 코드를 실행하면 404 오류가 발생한다.
+
+**🤔 해결법: Thymeleaf 같은 템플릿 엔진 추가**
+
+```null
+implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+```
+
+이 의존성을 추가하면 Spring Boot는 템플릿 파일(index.html)을 찾고  
+자동으로 렌더링할 수 있게 된다.
+
+## ✅ 마무리 정리
+
+• 단순한 `main()`만 있으면 서버는 자동 종료됨  
+• 컨트롤러가 있거나 spring-boot-starter-web이 있으면 내장 서버 유지  
+• `@ResponseBody`는 리턴 값을 `HTTP` 본문으로 보냄  
+• HTML 렌더링에는 템플릿 엔진 필요  
+• 템플릿 없이 HTML 보여주고 싶으면 `static/` 폴더 사용

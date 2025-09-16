@@ -2,7 +2,7 @@
 
 ### 개발 블로그입니다.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://mingoojo-blog-next-3c4aysdz7-mingoojos-projects.vercel.app)
+[![Deploy with Vercel](https://vercel.com/button)](https://mingoojo-blog-next-kit.vercel.app)
 
 ## 🛠 기술 스택
 
