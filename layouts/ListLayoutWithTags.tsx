@@ -3,8 +3,8 @@
 import { usePathname } from 'next/navigation'
 import { slug } from 'github-slugger'
 import { formatDate } from 'pliny/utils/formatDate'
-import { CoreContent } from 'pliny/utils/contentlayer'
-import type { Blog } from 'contentlayer/generated'
+import { allCoreContent, CoreContent, sortPosts } from 'pliny/utils/contentlayer'
+import { allBlogs, type Blog } from 'contentlayer/generated'
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
 import siteMetadata from '@/data/siteMetadata'
@@ -77,6 +77,9 @@ export default function ListLayoutWithTags({
 
   const displayPosts = initialDisplayPosts.length > 0 ? initialDisplayPosts : posts
 
+  const allPosts = allCoreContent(sortPosts(allBlogs))
+  console.log(allPosts)
+
   return (
     <>
       <div>
@@ -100,11 +103,12 @@ export default function ListLayoutWithTags({
               )}
               <ul>
                 {sortedTags.map((t) => {
+                  const items = allPosts.filter((data) => data.tags.includes(t))
                   return (
                     <li key={t} className="my-3">
                       {decodeURI(pathname.split('/tags/')[1]) === slug(t) ? (
                         <h3 className="text-primary-500 inline px-3 py-2 text-sm font-bold uppercase">
-                          {`${t} (${tagCounts[t]})`}
+                          {`${t} (${items.length})`}
                         </h3>
                       ) : (
                         <Link
@@ -112,7 +116,7 @@ export default function ListLayoutWithTags({
                           className="hover:text-primary-500 dark:hover:text-primary-500 px-3 py-2 text-sm font-medium text-gray-500 uppercase dark:text-gray-300"
                           aria-label={`View posts tagged ${t}`}
                         >
-                          {`${t} (${tagCounts[t]})`}
+                          {`${t} (${items.length})`}
                         </Link>
                       )}
                     </li>
