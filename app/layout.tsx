@@ -11,7 +11,6 @@ import Footer from '@/components/Footer'
 import siteMetadata from '@/data/siteMetadata'
 import { ThemeProviders } from './theme-providers'
 import { Metadata } from 'next'
-import Script from 'next/script'
 
 const space_grotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -121,6 +120,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               -ms-user-select: text !important;
               user-select: text !important;
             }
+                    /* ✅ 코드 블럭 영역은 드래그/복사 허용 */
+            pre, pre * {
+              -webkit-user-select: text !important;
+              -moz-user-select: text !important;
+              -ms-user-select: text !important;
+              user-select: text !important;
+            }
             img { pointer-events: none; }
           `,
           }}
@@ -141,51 +147,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Footer />
           </SectionContainer>
         </ThemeProviders>
-
-        {/* ⬇ 복사/우클릭/드래그 등 이벤트 차단 (입력/에디터는 예외) */}
-        <Script id="guard-copy-drag" strategy="afterInteractive">
-          {`
-            (function () {
-              const isEditable = (el) => {
-                if (!el) return false;
-                const tag = el.tagName?.toLowerCase();
-                const editable =
-                  el.isContentEditable ||
-                  tag === 'input' ||
-                  tag === 'textarea' ||
-                  el.closest('[contenteditable="true"]');
-                return !!editable;
-              };
-
-              const block = (e) => {
-                if (isEditable(e.target)) return; // 입력 영역은 허용
-                e.preventDefault();
-              };
-
-              // 마우스 관련
-              document.addEventListener('contextmenu', block, { capture: true });
-              document.addEventListener('dragstart', block, { capture: true });
-              document.addEventListener('selectstart', block, { capture: true });
-
-              // 클립보드 관련
-              document.addEventListener('copy', block, { capture: true });
-              document.addEventListener('cut', block, { capture: true });
-
-              // 키보드 단축키(Ctrl/Cmd+C / X / S / P / U 등) - 입력창 예외
-              document.addEventListener('keydown', (e) => {
-                if (isEditable(e.target)) return;
-                const mod = e.ctrlKey || e.metaKey;
-                if (
-                  (mod && ['c','x','s','p','u','a'].includes(e.key.toLowerCase())) ||
-                  e.key === 'PrintScreen'
-                ) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }
-              }, { capture: true });
-            })();
-            `}
-        </Script>
       </body>
     </html>
   )
