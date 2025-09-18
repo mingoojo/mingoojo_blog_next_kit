@@ -78,7 +78,6 @@ export default function ListLayoutWithTags({
   const displayPosts = initialDisplayPosts.length > 0 ? initialDisplayPosts : posts
 
   const allPosts = allCoreContent(sortPosts(allBlogs))
-  console.log(allPosts)
 
   return (
     <>
