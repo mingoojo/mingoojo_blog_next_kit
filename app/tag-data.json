@@ -1,4 +1,6 @@
 {
+  "markdown": 2,
+  "dev": 1,
   "next-js": 7,
   "javascript": 1,
   "typescript": 1,
@@ -11,13 +13,9 @@
   "math": 1,
   "ols": 1,
   "github": 2,
-  "writings": 1,
-  "book": 1,
-  "reflection": 1,
   "holiday": 1,
   "canada": 1,
   "images": 1,
-  "markdown": 1,
   "code": 1,
   "features": 1
 }

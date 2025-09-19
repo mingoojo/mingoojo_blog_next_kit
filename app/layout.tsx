@@ -65,8 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang={siteMetadata.language}
       className={`${space_grotesk.variable} scroll-smooth`}
-      suppressHydrationWarning
-    >
+      suppressHydrationWarning>
       <head>
         <link
           rel="apple-touch-icon"
@@ -135,8 +134,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
       <body
         className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-950 dark:text-white"
-        suppressHydrationWarning
-      >
+        suppressHydrationWarning>
         <ThemeProviders>
           <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
           <SectionContainer>
