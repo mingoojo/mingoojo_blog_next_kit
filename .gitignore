@@ -19,6 +19,7 @@
 /out/
 public/sitemap.xml
 .vercel
+/defaultFiles
 
 # production
 /build
