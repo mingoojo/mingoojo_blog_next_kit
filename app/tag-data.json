@@ -1,21 +1,10 @@
 {
-  "spring": 4,
-  "next-js": 7,
-  "javascript": 1,
-  "typescript": 1,
-  "markdown": 2,
+  "markdown": 1,
   "dev": 1,
-  "tailwind": 3,
-  "guide": 6,
-  "feature": 2,
-  "multi-author": 1,
-  "hello": 1,
-  "math": 1,
-  "ols": 1,
-  "github": 2,
-  "holiday": 1,
-  "canada": 1,
-  "images": 1,
-  "code": 1,
-  "features": 1
+  "spring": 4,
+  "database": 1,
+  "redis": 1,
+  "next-js": 1,
+  "javascript": 1,
+  "typescript": 1
 }
