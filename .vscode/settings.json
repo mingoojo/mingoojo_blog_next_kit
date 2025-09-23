@@ -1,4 +1,54 @@
 {
   "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.enablePromptUseWorkspaceTsdk": true
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "eslint.alwaysShowStatus": true,
+  "editor.formatOnSave": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "html",
+    "typescriptreact",
+    "typescript"
+  ],
+  "[html]": {
+    "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
+  },
+  "[ignore]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  "[properties]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  "[dotenv]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  // "eslint.experimental": {
+  //   "useFlatConfig": true
+  // },
+  // "eslint.options": {
+  //   "overrideConfigFile": "eslint.config.mjs"
+  // }
+  "better-comments.tags": [
+    {
+      "tag": "*",
+      "color": "#FFCC00", // 강조 표시 색상
+      "strikethrough": false,
+      "backgroundColor": "transparent"
+    },
+    {
+      "tag": ">TODO",
+      "color": "#FF44CC", // TODO 리스트
+      "strikethrough": false,
+      "backgroundColor": "transparent"
+    }
+  ],
+  "better-comments.multilineComments": true
 }

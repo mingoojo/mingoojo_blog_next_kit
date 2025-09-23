@@ -1,0 +1,232 @@
+---
+title: Spring Security를 활용한 세션 로그인 구현
+date: '2025-09-23'
+tags: ['spring']
+draft: false
+summary: Spring Boot 애플리케이션이 단순 실행 시 바로 종료되는 이유와, @Controller 혹은 spring-boot-starter-web 의존성 추가 시 내장 톰캣 서버가 계속 실행되는 원리를 설명한다. 또한 @ResponseBody, @RestController, 템플릿 엔진 사용 여부에 따른 동작 차이
+---
+
+
+웹 애플리케이션에서 **로그인 상태 관리**를 구현할 때 가장 전통적이면서도 안정적인 방법은 **세션(Session) 기반 인증**이다.
+
+이번 글에서는 **Spring Security**를 활용해 세션 방식 로그인/로그아웃을 구현하고,
+권한이 필요한 API에 접근했을 때 어떻게 인증/인가를 처리하는지 정리했다.
+
+아래는 세션방식의 로그인의 워크 플로우를 보여준다.
+
+
+```
+flowchart TD
+    A[사용자: POST /auth/login] -->|username/password| B[UsernamePasswordAuthenticationFilter]
+    B --> C[AuthenticationManager]
+    C --> D[DaoAuthenticationProvider]
+    D --> E[MyUserDetailsService.loadUserByUsername()]
+    E --> F[DB에서 사용자 조회 + 권한 부여]
+    F -->|성공| G[PasswordEncoder.matches() 비밀번호 검증]
+    G -->|성공| H[SecurityContext에 Authentication 저장]
+    H --> I[세션 생성 (JSESSIONID 발급)]
+    I --> J[200 JSON 응답]
+    
+    F -->|실패| X[UsernameNotFoundException → 401 JSON]
+    G -->|실패| Y[BadCredentialsException → 401 JSON]
+```
+
+
+---
+### 1. Spring Security 기본 설정
+
+먼저 **SecurityConfig**에서 필터 체인을 정의한다.
+주요 포인트는 다음과 같다:
+- csrf().disable() – SPA 환경에서는 기본적으로 CSRF 토큰을 사용하지 않으므로 비활성화
+- cors() – CORS 설정을 Bean으로 분리하여 프론트엔드에서 쿠키를 보낼 수 있도록 허용
+- authorizeHttpRequests() – 경로별 접근 권한 정의
+- formLogin() – 로그인 성공/실패 핸들러를 JSON으로 응답하도록 커스터마이징
+- logout() – 로그아웃 시 세션 무효화 + 쿠키 삭제 + 200 OK 응답
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http.csrf(csrf -> csrf.disable()) // CSRF 비활성화
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/auth/login").permitAll() // 로그인 API는 인증 없이 접근 가능
+                .requestMatchers("/**").hasAnyAuthority("USER", "ROLE_USER") // 나머지는 USER 권한 필요
+                .anyRequest().authenticated()
+            )
+            .exceptionHandling(e -> e
+                .authenticationEntryPoint((req, res, ex) -> { // 로그인 정보 없음 → 401
+                    res.setStatus(401);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"error\":\"unauthenticated\"}");
+                })
+                .accessDeniedHandler((req, res, ex) -> { // 로그인 O, 권한 X → 403
+                    res.setStatus(403);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"error\":\"forbidden\"}");
+                })
+            )
+            .formLogin(form -> form
+                .loginPage("/auth/login")
+                .successHandler((req, res, auth) -> { // 로그인 성공 → 200
+                    res.setStatus(200);
+                    res.setContentType("application/json");
+                    res.getWriter().write("{\"status\":\"ok\"}");
+                })
+                .failureHandler((req, res, ex) -> { // 로그인 실패 → 401
+                    res.setStatus(401);
+                    res.setContentType("application/json");
+                    res.getWriter().write("{\"error\":\"" + ex.getMessage() + "\"}");
+                })
+            )
+            .logout(logout -> logout
+                .logoutUrl("/auth/logout")
+                .invalidateHttpSession(true)
+                .clearAuthentication(true)
+                .deleteCookies("JSESSIONID")
+                .logoutSuccessHandler((req, res, auth) -> {
+                    res.setStatus(200);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"status\":\"logged_out\"}");
+                })
+            );
+        return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(List.of("*"));
+        config.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH","OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true); // 쿠키 전송 허용
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+}
+```
+
+
+> 💡 **중요:** 이렇게 설정하면 로그인하지 않은 사용자가 /api/** 요청 시 **401 JSON**을 받게 되고,
+> 로그인했지만 권한이 없는 사용자는 **403 JSON**을 받는다.
+> 더 이상 /auth/login으로 리다이렉트(302)되지 않기 때문에 SPA 프론트엔드와 궁합이 좋다.
+
+---
+
+### 2. UserDetailsService 구현
+
+스프링 시큐리티는 UserDetailsService를 통해 로그인 시 사용자 정보를 불러온다.
+DB에서 username으로 사용자를 조회하고, 권한(Authority)을 부여한다.
+
+```java
+@Service
+@RequiredArgsConstructor
+public class MyUserDetailsService implements UserDetailsService {
+
+    private final MemberRepository memberRepository;
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        Member member = memberRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException("아이디없음"));
+
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        authorities.add(new SimpleGrantedAuthority("USER")); // 권한 부여
+
+        return new User(member.getUsername(), member.getPassword(), authorities);
+    }
+}
+```
+
+> 여기서 new SimpleGrantedAuthority("USER")로 부여한 권한이 SecurityConfig의 hasAnyAuthority("USER", "ROLE_USER") 조건과 매칭된다.
+
+---
+
+### 3. 컨트롤러에서 인증 정보 활용하기
+
+컨트롤러 메서드에서 Authentication 객체를 주입받으면 현재 로그인한 사용자 정보를 확인할 수 있다.
+
+```java
+@GetMapping("/items")
+@ResponseBody
+public List<Item> items(Authentication authentication) {
+    if (authentication != null) {
+        System.out.println("현재 로그인 사용자: " + authentication.getName());
+    }
+    return itemService.getItem();
+}
+```
+
+- authentication.getName() → 로그인한 username
+- authentication.getAuthorities() → 현재 사용자 권한 리스트
+
+---
+
+### 4. 동작 시나리오 정리
+
+1. **로그인 요청 (POST /auth/login)**
+    - username/password로 인증
+    - 성공 → 세션 생성, JSESSIONID 쿠키 발급
+    - 실패 → 401 JSON 응답
+    
+2. **API 호출 (GET /api/items)**
+    - 브라우저는 JSESSIONID 쿠키를 자동으로 전송
+    - 인증 성공 시 컨트롤러 실행 → 데이터 응답
+    - 로그인 정보 없으면 401 JSON 응답
+    
+3. **로그아웃 요청 (POST /auth/logout)**
+    - 세션 무효화 + JSESSIONID 삭제
+    - 200 JSON 응답
+
+
+---
+
+### 5. 프론트엔드 연동 포인트
+
+React + Axios에서 withCredentials: true를 꼭 넣어야 세션 쿠키가 함께 전송된다.
+
+```ts
+const api = axios.create({
+  baseURL: "http://localhost:8080",
+  withCredentials: true, // ✅ 세션 쿠키 전달
+});
+
+// 로그인
+await api.post("/auth/login", { username, password });
+
+// 인증 필요한 API
+await api.get("/api/items");
+
+// 로그아웃
+await api.post("/auth/logout");
+```
+
+## **📝 정리 & 배운 점**
+
+- Spring Security의 **formLogin + 세션** 조합만으로도 손쉽게 세션 기반 인증 구현 가능
+- UserDetailsService를 통해 DB 사용자 정보를 불러와 권한 부여
+- exceptionHandling()으로 302 리다이렉트 대신 **401/403 JSON 응답** → SPA 친화적
+- 로그아웃 시 세션/쿠키 정리 + JSON 응답으로 마무리
+
+## **단점**
+
+- 서버에서 관리하는 토큰은 서버에 큰 부하를 줄 수 있다. 사용자가 많아지면 이 방식으로 구현하는 것 자체가 서버의 리소스를 많이 차지한다.
+- 세션은 보통 서버 메모리(Local Session)에 저장되므로, 서버가 여러 대로 늘어나면(로드 밸런싱) 세션을 공유하는 문제가 발생한다.
+  
+
+> ✅ **포인트:** 세션 기반 인증은 JWT보다 구현이 단순하고, Spring Security에서 지원이 강력합니다.
+> CSRF 설정, CORS, withCredentials 옵션만 올바르게 잡아주면 안정적이고 직관적인 인증 시스템을 만들 수 있습니다.
+
+---
+
+이 방식으로 구현하면 **Spring Security가 로그인 상태 관리 & 인증 체크를 알아서 처리**해주기 때문에,
+컨트롤러에서는 비즈니스 로직만 신경 쓰면 된다는 장점이 있다.
