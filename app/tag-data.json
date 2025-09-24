@@ -1,9 +1,11 @@
 {
+  "sqld": 2,
+  "database": 3,
+  "license": 2,
+  "spring": 4,
+  "redis": 1,
   "markdown": 1,
   "dev": 1,
-  "spring": 4,
-  "database": 1,
-  "redis": 1,
   "next-js": 1,
   "javascript": 1,
   "typescript": 1
