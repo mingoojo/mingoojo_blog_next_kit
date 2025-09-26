@@ -17,10 +17,10 @@ Lombok을 활용해서 코드를 줄이는 실습을 해보았다.
 ### 프로젝트 목표
 
 ```text
-•	Spring Boot로 간단한 웹 API 서버 만들기
-•	PostgreSQL에 연결해서 데이터 조회하기
-•	Lombok으로 깔끔한 Entity, Controller 작성하기
-•	findAll() 메소드로 전체 데이터 리스트 표출하기
+-	Spring Boot로 간단한 웹 API 서버 만들기
+-	PostgreSQL에 연결해서 데이터 조회하기
+-	Lombok으로 깔끔한 Entity, Controller 작성하기
+-	findAll() 메소드로 전체 데이터 리스트 표출하기
 ```
 
 ---
@@ -28,14 +28,14 @@ Lombok을 활용해서 코드를 줄이는 실습을 해보았다.
 ### 1. 프로젝트 세팅
 
 ```text
-•	Gradle 프로젝트
-•	Java 17
-•	Spring Boot 3.2.x
-•	Dependencies:
-	•	Spring Web
-	•	Spring Data JPA
-	•	PostgreSQL Driver
-	•	Lombok
+-	Gradle 프로젝트
+-	Java 17
+-	Spring Boot 3.2.x
+-	Dependencies:
+	-	Spring Web
+	-	Spring Data JPA
+	-	PostgreSQL Driver
+	-	Lombok
 ```
 
 ---
@@ -67,9 +67,9 @@ project/
 ```
 
 ```text
-•	controller : API를 담당
-•	domain : 데이터베이스 테이블(Entity)
-•	Repository : JPA 인터페이스
+-	controller : API를 담당
+-	domain : 데이터베이스 테이블(Entity)
+-	Repository : JPA 인터페이스
 ```
 
 ---
@@ -104,7 +104,7 @@ dependencies {
 ```
 
 ✅ 주의:  
-• compileOnly와 annotationProcessor 둘 다 넣어야 Lombok이 정상 작동한다.
+- compileOnly와 annotationProcessor 둘 다 넣어야 Lombok이 정상 작동한다.
 
 ---
 
@@ -133,7 +133,7 @@ server:
 ```
 
 ✅ 주의:  
-• your_database_name, your_db_username, your_db_password는 본인 DB 설정에 맞게 변경해야 한다.
+- your_database_name, your_db_username, your_db_password는 본인 DB 설정에 맞게 변경해야 한다.
 
 ---
 
@@ -169,8 +169,8 @@ public class Item {
 ```
 
 ✅ 설명:  
-• @Entity : 이 클래스가 테이블과 매핑된다는 의미  
-• @Getter, @ToString, @NoArgsConstructor : Lombok 사용해서 코드 간결화
+- @Entity : 이 클래스가 테이블과 매핑된다는 의미  
+- @Getter, @ToString, @NoArgsConstructor : Lombok 사용해서 코드 간결화
 
 **Repository: ItemRepository.java**4️⃣
 
@@ -185,7 +185,7 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 ```
 
 ✅ 설명:  
-• JpaRepository를 상속하면 findAll(), save(), findById() 등 기본 메서드가 자동 제공된다.
+- JpaRepository를 상속하면 findAll(), save(), findById() 등 기본 메서드가 자동 제공된다.
 
 **Controller: ItemController.java**4️⃣
 
@@ -216,8 +216,8 @@ public class ItemController {
 ```
 
 ✅ 설명:  
-• @RestController : @Controller + @ResponseBody 조합 (JSON 바로 리턴)  
-• @RequiredArgsConstructor : final 필드에 대해 생성자 자동 생성
+- @RestController : @Controller + @ResponseBody 조합 (JSON 바로 리턴)  
+- @RequiredArgsConstructor : final 필드에 대해 생성자 자동 생성
 
 ---
 
@@ -254,9 +254,9 @@ PostgreSQL에 저장된 Item 리스트가 JSON 형태로 응답된다.
 ### ✅ 마무리 정리
 
 이번 실습에서는  
-• Spring Boot로 웹 서버를 만들고  
-• PostgreSQL과 연동하고  
-• Lombok으로 코드 양을 줄여  
-• 깔끔한 API를 만들어냈다.
+- Spring Boot로 웹 서버를 만들고  
+- PostgreSQL과 연동하고  
+- Lombok으로 코드 양을 줄여  
+- 깔끔한 API를 만들어냈다.
 
 이 구조를 바탕으로 CRUD(Create, Read, Update, Delete) API를 추가하거나, 더 복잡한 비즈니스 로직을 쌓아갈 수 있다.
