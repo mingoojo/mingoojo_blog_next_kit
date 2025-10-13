@@ -1,6 +1,6 @@
 {
+  "spring": 5,
   "git": 1,
-  "spring": 4,
   "database": 3,
   "redis": 1,
   "markdown": 1,
