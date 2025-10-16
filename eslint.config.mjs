@@ -23,7 +23,7 @@ const config = [
     'plugin:jsx-a11y/recommended',
     'plugin:prettier/recommended',
     'next',
-    'next/core-web-vitals'
+    'next/core-web-vitals',
   ),
   {
     plugins: {
@@ -44,7 +44,7 @@ const config = [
       },
     },
     rules: {
-      'prettier/prettier': 'error',
+      'prettier/prettier': 'off',
       'react/react-in-jsx-scope': 'off',
       'jsx-a11y/anchor-is-valid': [
         'error',

@@ -39,7 +39,7 @@ export default async function TagPage(props: { params: Promise<{ tag: string; pa
   )
   const pagination = {
     currentPage: pageNumber,
-    totalPages: totalPages,
+    totalPages: totalPages
   }
 
   return (
