@@ -42,8 +42,7 @@ function Pagination({ totalPages, currentPage }: PaginationProps) {
         {prevPage && (
           <Link
             href={currentPage - 1 === 1 ? `/${basePath}/` : `/${basePath}/page/${currentPage - 1}`}
-            rel="prev"
-          >
+            rel="prev">
             Previous
           </Link>
         )}
@@ -104,8 +103,7 @@ export default function ListLayout({
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
+              stroke="currentColor">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"

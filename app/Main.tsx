@@ -38,8 +38,7 @@ export default function Home({ posts }) {
                           <h2 className="text-2xl leading-8 font-bold tracking-tight">
                             <Link
                               href={`/blog/${slug}`}
-                              className="text-gray-900 dark:text-gray-100"
-                            >
+                              className="text-gray-900 dark:text-gray-100">
                               {title}
                             </Link>
                           </h2>
@@ -57,8 +56,7 @@ export default function Home({ posts }) {
                         <Link
                           href={`/blog/${slug}`}
                           className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400"
-                          aria-label={`Read more: "${title}"`}
-                        >
+                          aria-label={`Read more: "${title}"`}>
                           Read more &rarr;
                         </Link>
                       </div>
@@ -75,8 +73,7 @@ export default function Home({ posts }) {
           <Link
             href="/blog"
             className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400"
-            aria-label="All posts"
-          >
+            aria-label="All posts">
             All Posts &rarr;
           </Link>
         </div>

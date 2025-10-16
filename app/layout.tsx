@@ -146,6 +146,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </SectionContainer>
         </ThemeProviders>
       </body>
-    </html >
+    </html>
   )
 }

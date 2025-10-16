@@ -33,8 +33,7 @@ export default async function Page() {
                 <Link
                   href={`/tags/${slug(t)}`}
                   className="-ml-2 text-sm font-semibold text-gray-600 uppercase dark:text-gray-300"
-                  aria-label={`View posts tagged ${t}`}
-                >
+                  aria-label={`View posts tagged ${t}`}>
                   {` (${items.length})`}
                 </Link>
               </div>

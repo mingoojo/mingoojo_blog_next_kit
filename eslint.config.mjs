@@ -39,7 +39,7 @@ const config = [
       ecmaVersion: 5,
       sourceType: 'commonjs',
       parserOptions: {
-        project: true,
+        project: './tsconfig.json',
         tsconfigRootDir: __dirname,
       },
     },

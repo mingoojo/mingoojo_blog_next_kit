@@ -31,11 +31,17 @@ function PreWithMermaid(props: any) {
     const raw = extractTextDeep(codeEl).trim()
     // 안전장치: 첫 토큰이 다이어그램 키워드인지 확인
     const firstToken = raw.split(/\s+/)[0]
-    const seemsMermaid = /^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|gantt|journey|pie|gitGraph|stateDiagram)/.test(firstToken)
+    const seemsMermaid =
+      /^(graph|flowchart|sequenceDiagram|classDiagram|erDiagram|gantt|journey|pie|gitGraph|stateDiagram)/.test(
+        firstToken,
+      )
     if (!seemsMermaid) {
       // 혹시 또 꼬이면 문제 파악 쉽게 출력
       if (process.env.NODE_ENV !== 'production') {
-        console.warn('[Mermaid] Unexpected chart source:', { firstToken, preview: raw.slice(0, 120) })
+        console.warn('[Mermaid] Unexpected chart source:', {
+          firstToken,
+          preview: raw.slice(0, 120),
+        })
       }
     }
     return <Mermaid chart={raw} />
@@ -47,7 +53,7 @@ export const components: MDXComponents = {
   Image,
   TOCInline,
   a: CustomLink,
-  pre: PreWithMermaid,      // 🔁 여기만 교체
+  pre: PreWithMermaid, // 🔁 여기만 교체
   table: TableWrapper,
   BlogNewsletterForm,
 }

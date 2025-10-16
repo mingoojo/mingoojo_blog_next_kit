@@ -41,8 +41,7 @@ function Pagination({ totalPages, currentPage }: PaginationProps) {
         {prevPage && (
           <Link
             href={currentPage - 1 === 1 ? `/${basePath}/` : `/${basePath}/page/${currentPage - 1}`}
-            rel="prev"
-          >
+            rel="prev">
             Previous
           </Link>
         )}
@@ -95,8 +94,7 @@ export default function ListLayoutWithTags({
               ) : (
                 <Link
                   href={'/blog'}
-                  className="hover:text-primary-500 dark:hover:text-primary-500 font-bold text-gray-700 uppercase dark:text-gray-300"
-                >
+                  className="hover:text-primary-500 dark:hover:text-primary-500 font-bold text-gray-700 uppercase dark:text-gray-300">
                   All Posts
                 </Link>
               )}
@@ -113,8 +111,7 @@ export default function ListLayoutWithTags({
                         <Link
                           href={`/tags/${slug(t)}`}
                           className="hover:text-primary-500 dark:hover:text-primary-500 px-3 py-2 text-sm font-medium text-gray-500 uppercase dark:text-gray-300"
-                          aria-label={`View posts tagged ${t}`}
-                        >
+                          aria-label={`View posts tagged ${t}`}>
                           {`${t} (${items.length})`}
                         </Link>
                       )}
