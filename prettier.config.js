@@ -1,14 +1,3 @@
-// module.exports = {
-//   semi: false,
-//   singleQuote: true,
-//   printWidth: 100,
-//   tabWidth: 2,
-//   useTabs: false,
-//   trailingComma: 'es5',
-//   bracketSpacing: true,
-//   plugins: ['prettier-plugin-tailwindcss'],
-//   htmlWhitespaceSensitivity: 'ignore', // HTML/JSX에서 줄바꿈 무시
-// }
 module.exports = {
   printWidth: 100, // 한 줄 최대 길이
   tabWidth: 2, // 탭 크기
@@ -21,4 +10,5 @@ module.exports = {
   endOfLine: 'lf', // 개행 문자
   htmlWhitespaceSensitivity: 'ignore', // HTML/JSX에서 줄바꿈 무시
   singleAttributePerLine: false,
+  embeddedLanguageFormatting: 'off', // ✅ 주석/문자열 내부 재포맷 금지
 }

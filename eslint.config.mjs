@@ -64,7 +64,9 @@ const config = [
       'import/no-commonjs': 'off',
       '@typescript-eslint/no-require-imports': 'off',
       'no-unused-vars': 'warn',
+      "trailingComma": "all",
       htmlWhitespaceSensitivity: 'off',
+      "embeddedLanguageFormatting": "off",
     },
   },
 ]

@@ -1,5 +1,5 @@
 {
-  "eslint.experimental.useFlatConfig" : true,
+  "eslint.experimental.useFlatConfig": true,
   "typescript.tsdk": "node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
@@ -12,15 +12,20 @@
   "eslint.validate": [
     "javascript",
     "javascriptreact",
-    "html",
+    "typescript",
     "typescriptreact",
-    "typescript"
+    "html",
+    "markdown",
+    "mdx"
   ],
   "[html]": {
     "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
   },
   "[markdown]": {
-    "editor.defaultFormatter": "rvest.vs-code-prettier-eslint"
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[mdx]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "[ignore]": {
     "editor.defaultFormatter": "foxundermoon.shell-format"

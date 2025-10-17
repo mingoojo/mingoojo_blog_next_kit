@@ -17,19 +17,30 @@ export default function MermaidClient({ chart }: { chart: string }) {
     const diagram = chart.replace(/<<[^<>]+>>/, '').trim()
 
     let mounted = true
-    ;(async () => {
-      const { default: mermaid } = await import('mermaid/dist/mermaid.esm.min.mjs')
+      ; (async () => {
+        const { default: mermaid } = await import('mermaid/dist/mermaid.esm.min.mjs')
 
-      mermaid.initialize({
-        theme: 'neutral',
-        securityLevel: 'loose',
-      })
+        mermaid.initialize({
+          theme: 'neutral',
+          securityLevel: 'loose',
+          flowchart: {
+            htmlLabels: true,
+            useMaxWidth: false,      // ✅ foreignObject 폭/높이 계산 안정화
+            diagramPadding: 16,
+            nodeSpacing: 40,
+            rankSpacing: 50,
+          },
+        })
 
-      if (!mounted || !ref.current) return
-      const id = 'mermaid-' + Math.random().toString(36).slice(2)
-      const { svg } = await mermaid.render(id, diagram)
-      ref.current.innerHTML = svg
-    })()
+        if (!mounted || !ref.current) return
+        const id = 'mermaid-' + Math.random().toString(36).slice(2)
+        const { svg } = await mermaid.render(id, diagram)
+        ref.current.innerHTML = svg
+        const svgEl = ref.current.querySelector('svg') as SVGSVGElement | null
+        if (svgEl) {
+          svgEl.style.overflow = 'visible' // ✅ 혹시 모를 잘림 2차 방지
+        }
+      })()
     return () => {
       mounted = false
     }
@@ -47,6 +58,7 @@ export default function MermaidClient({ chart }: { chart: string }) {
           backgroundColor: '#ffffff',
           paddingBlock: '30px',
           borderRadius: '8px',
+          height: '100%'
         }}
         ref={ref}
       />
