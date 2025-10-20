@@ -63,10 +63,10 @@ const config = [
       '@typescript-eslint/no-explicit-any': 'warn',
       'import/no-commonjs': 'off',
       '@typescript-eslint/no-require-imports': 'off',
-      'no-unused-vars': 'warn',
-      "trailingComma": "all",
+      "trailingComma": "off",
       htmlWhitespaceSensitivity: 'off',
       "embeddedLanguageFormatting": "off",
+      "no-unused-vars": "warn",
     },
   },
 ]

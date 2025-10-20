@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import styles from './MermaidClient.module.css'
 
 export default function MermaidClient({ chart }: { chart: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -49,17 +50,26 @@ export default function MermaidClient({ chart }: { chart: string }) {
   return (
     <div>
       <div
-        className="mermaid"
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#ffffff',
-          paddingBlock: '30px',
-          borderRadius: '8px',
-          height: '100%'
-        }}
+        className={`
+        ${styles.mermaidContainer} mermaid
+        w-full flex items-center justify-center
+          bg-white
+          py-8 rounded-lg
+          overflow-x-auto
+          max-w-full
+        `}
+
+        // className="mermaid"
+        // style={{
+        //   width: '100%',
+        //   display: 'flex',
+        //   alignItems: 'center',
+        //   justifyContent: 'center',
+        //   backgroundColor: '#ffffff',
+        //   paddingBlock: '30px',
+        //   borderRadius: '8px',
+        //   height: '100%'
+        // }}
         ref={ref}
       />
 
@@ -70,6 +80,7 @@ export default function MermaidClient({ chart }: { chart: string }) {
             color: '#666',
             marginTop: '8px',
             textAlign: 'center',
+
           }}>
           {`[ ${title} ]`}
         </figcaption>
