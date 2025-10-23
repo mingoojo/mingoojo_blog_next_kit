@@ -1,0 +1,65 @@
+---
+title: '[SQLD 자격증 공부] SQLD 관련 용어 설명'
+date: '2025-09-03'
+tags: ['database', 'sqld', 'license']
+draft: false
+summary: SQLD 개요 내용 정리.
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+### 1. 스키마(schema)
+
+> **데이터베이스 구조 또는 설계도를 의미**
+
+- 스키마는 데이터베이스에서 사용될때, 테이블(엔터티)안에서 사용될때 의미가 달라진다.
+
+1.  **데이터베이스의 스키마(Database Schema)**
+    - 데이터베이스의 논리적인 구조를 나타낸다.
+    - 데이터베이스 안에 테이블, 뷰, 인덱스, 관계. 제약조건, 사용자 권한등을 포함한 구조를 통틀어 말한다.
+
+    - 구성 요소 예시
+      - 테이블 구조
+      - 테이블 간 관계 (1:N, N:M)
+      - 제약조건 (PK, FK, UNIQUE, CHECK 등)
+      - 인덱스, 뷰, 트리거
+      - 사용자 권한과 접근 정책
+
+       <ImageWithCaption
+
+          src="/static/images/schema-database.png"
+          alt="Database Schema"
+          caption="데이터베이스 스키마"
+
+      />
+
+    - 건물 전체의 설계도
+
+2.  **테이블 스키마(Table Schema)**
+    - 특정 테이블 하나의 구조를 정의 한 것
+    - 테이블에 존재하는 열, 열의 데이터 타입, 제약조건 등을 의미
+
+      ```sql
+          CREATE TABLE users (
+          user_id INT PRIMARY KEY,
+          name VARCHAR(50) NOT NULL,
+          email VARCHAR(100) UNIQUE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+      ```
+
+        <ImageWithCaption
+
+           src="/static/images/table-RDB.png"
+           alt="Entity Diagram"
+           caption="테이블 관점 용어설명"
+
+      />
+      - 테이블 이름: users
+      - 컬럼: user_id, name, email, created_at
+      - 데이터 타입: INT, VARCHAR, TIMESTAMP
+      - 제약조건: PRIMARY KEY, NOT NULL, UNIQUE, DEFAULT
+
+    - 건물 안 한 방(테이블) 의 내부 설계도
+
+---
