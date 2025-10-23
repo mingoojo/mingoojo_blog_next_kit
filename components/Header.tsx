@@ -20,7 +20,6 @@ const Header = () => {
 
 
 
-
   return (
     <header className={headerClass}>
       <Link href="/" aria-label={siteMetadata.headerTitle}>
@@ -43,10 +42,6 @@ const Header = () => {
           {headerNavLinks
             .filter((link) => link.href !== '/')
             .map((link) => {
-              console.log(link)
-              console.log(pathname)
-
-              console.log(`${pathname.split("/")[1]}/`, link.href)
 
               if (link.href === '/blog') {
                 if (pathname.startsWith('/tags') || pathname.startsWith('/blog')) {
