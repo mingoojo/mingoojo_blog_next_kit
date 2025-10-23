@@ -1,13 +1,13 @@
 {
   "spring": 5,
   "git": 1,
-  "database": 4,
+  "database": 6,
   "redis": 1,
-  "next-js": 1,
-  "javascript": 1,
-  "typescript": 1,
+  "sqld": 5,
+  "license": 5,
   "markdown": 1,
   "dev": 1,
-  "sqld": 3,
-  "license": 3
+  "next-js": 1,
+  "javascript": 1,
+  "typescript": 1
 }
