@@ -42,110 +42,114 @@ import InternalLink from '@/components/mdxComponents/InternalLink'
 
       />
 
-4.  **SQL** - Structured Query Languege의 약자로, 구조화된 질의 언어이다. - 데이터베이스에 정해진 문법으로 명령을 주고 그에 대한 결과를 얻기 위한 명령어 - 데이터베이스를 제어하고 안의 데이터를 조작할 수 있는 언어수단
+4.  **SQL**
 
-          <br/>
-        1. DDL(Data Definition Languege, 데이터 정의 언어)
-           - 데이터의 구조, 즉 <InternalLink link="schema" name="스키마"/>를 정의하는 명령어이다.
-           - ERD(Entity Relationship Diagram)으로 그려진 데이터 모델은 DDL로 상호 변환이 가능하다.
-           - | 명령어   | 설명                                             |
-             | -------- | ------------------------------------------------ |
-             | CREATE   | 테이블, 뷰, 인덱스를 생성                        |
-             | ALTER    | 기존 객체 구조 변경(칼럼 추가 및 자료형 변경 등) |
-             | DROP     | 객체 삭제                                        |
-             | TRUNCATE | 테이블의 데이터 전체 삭제(구조 유지)             |
-           - ```sql
-                -- 테이블 생성
-                CREATE TABLE EMPLOYEE (
-                EMP_ID INT PRIMARY KEY,
-                NAME VARCHAR(50),
-                DEPT_ID INT,
-                SALARY DECIMAL(10,2)
-                );
+- Structured Query Languege의 약자로, 구조화된 질의 언어이다.
+- 데이터베이스에 정해진 문법으로 명령을 주고 그에 대한 결과를 얻기 위한 명령어
+- 데이터베이스를 제어하고 안의 데이터를 조작할 수 있는 언어수단
 
-                -- 컬럼 추가
-                ALTER TABLE EMPLOYEE ADD HIRE_DATE DATE;
+        <br/>
+      1. DDL(Data Definition Languege, 데이터 정의 언어)
+         - 데이터의 구조, 즉 <InternalLink link="schema" name="스키마"/>를 정의하는 명령어이다.
+         - ERD(Entity Relationship Diagram)으로 그려진 데이터 모델은 DDL로 상호 변환이 가능하다.
+         - | 명령어   | 설명                                             |
+           | -------- | ------------------------------------------------ |
+           | CREATE   | 테이블, 뷰, 인덱스를 생성                        |
+           | ALTER    | 기존 객체 구조 변경(칼럼 추가 및 자료형 변경 등) |
+           | DROP     | 객체 삭제                                        |
+           | TRUNCATE | 테이블의 데이터 전체 삭제(구조 유지)             |
+         - ```sql
+              -- 테이블 생성
+              CREATE TABLE EMPLOYEE (
+              EMP_ID INT PRIMARY KEY,
+              NAME VARCHAR(50),
+              DEPT_ID INT,
+              SALARY DECIMAL(10,2)
+              );
 
-                -- 테이블 삭제
-                DROP TABLE EMPLOYEE;
+              -- 컬럼 추가
+              ALTER TABLE EMPLOYEE ADD HIRE_DATE DATE;
 
-                -- 데이터만 비우기 (테이블 구조 유지)
-                TRUNCATE TABLE EMPLOYEE;
-             ```
+              -- 테이블 삭제
+              DROP TABLE EMPLOYEE;
 
-        2. DML(Data Manipulation Languege, 데이터 조작 언어)
-           - 테이블에 데이터를 조회, 입력, 수정, 삭제하는 명령어이다.
-           - Commit전에 롤백이 가능하다.
-           - | 명령어 | 설명        |
-             | ------ | ----------- |
-             | SELECT | 데이터 조회 |
-             | INSERT | 데이터 삽입 |
-             | UPDATE | 데이터 수정 |
-             | DELETE | 데이터 삭제 |
-           - ```sql
-                -- 데이터 삽입
-                INSERT INTO EMPLOYEE (EMP_ID, NAME, DEPT_ID, SALARY)
-                VALUES (1, 'Jo Mingu', 101, 5000);
+              -- 데이터만 비우기 (테이블 구조 유지)
+              TRUNCATE TABLE EMPLOYEE;
+           ```
 
-                -- 데이터 조회
-                SELECT * FROM EMPLOYEE WHERE DEPT_ID = 101;
+      2. DML(Data Manipulation Languege, 데이터 조작 언어)
+         - 테이블에 데이터를 조회, 입력, 수정, 삭제하는 명령어이다.
+         - Commit전에 롤백이 가능하다.
+         - | 명령어 | 설명        |
+           | ------ | ----------- |
+           | SELECT | 데이터 조회 |
+           | INSERT | 데이터 삽입 |
+           | UPDATE | 데이터 수정 |
+           | DELETE | 데이터 삭제 |
+         - ```sql
+              -- 데이터 삽입
+              INSERT INTO EMPLOYEE (EMP_ID, NAME, DEPT_ID, SALARY)
+              VALUES (1, 'Jo Mingu', 101, 5000);
 
-                -- 데이터 수정
-                UPDATE EMPLOYEE
-                SET SALARY = SALARY * 1.1
-                WHERE DEPT_ID = 101;
+              -- 데이터 조회
+              SELECT * FROM EMPLOYEE WHERE DEPT_ID = 101;
 
-                -- 데이터 삭제
-                DELETE FROM EMPLOYEE WHERE EMP_ID = 1;
-             ```
+              -- 데이터 수정
+              UPDATE EMPLOYEE
+              SET SALARY = SALARY * 1.1
+              WHERE DEPT_ID = 101;
 
-        3. DCL(Data Control Languege, 데이터 제어 언어)
-           - 사용자 접근권한과 같이 보안과 제어를 다루는 명령어이다.
-           - | 명령어 | 설명                 |
-             | ------ | -------------------- |
-             | GRANT  | 사용자에게 권한 부여 |
-             | REVOKE | 권한회수             |
-           - ```sql
-                -- 사용자에게 SELECT, INSERT 권한 부여
-                GRANT SELECT, INSERT ON EMPLOYEE TO HR_USER;
+              -- 데이터 삭제
+              DELETE FROM EMPLOYEE WHERE EMP_ID = 1;
+           ```
 
-                -- 권한 회수
-                REVOKE INSERT ON EMPLOYEE FROM HR_USER;
-             ```
+      3. DCL(Data Control Languege, 데이터 제어 언어)
+         - 사용자 접근권한과 같이 보안과 제어를 다루는 명령어이다.
+         - | 명령어 | 설명                 |
+           | ------ | -------------------- |
+           | GRANT  | 사용자에게 권한 부여 |
+           | REVOKE | 권한회수             |
+         - ```sql
+              -- 사용자에게 SELECT, INSERT 권한 부여
+              GRANT SELECT, INSERT ON EMPLOYEE TO HR_USER;
 
-        4. TCL(Transaction Control Languege, 트랜젝션 제어 언어)
-           - <InternalLink link="transaction" name="트랜젝션"/>에 대한 제어를 다루는 명령어이다., DCL의 일부로 보기도 한다.
-           - | 명령어    | 설명                    |
-             | --------- | ----------------------- |
-             | COMMIT    | 변경 내용 확정(저장)    |
-             | ROLLBACK  | 이전 상태로 복구(최소)  |
-             | SAVEPOINT | 트랜잭션 중간 지점 설정 |
-           - ```sql
-                -- 데이터 삽입
-                INSERT INTO EMPLOYEE VALUES (2, 'Minji', 102, 4000);
+              -- 권한 회수
+              REVOKE INSERT ON EMPLOYEE FROM HR_USER;
+           ```
 
-                -- 저장 지점 설정
-                SAVEPOINT point1;
+      4. TCL(Transaction Control Languege, 트랜젝션 제어 언어)
+         - <InternalLink link="transaction" name="트랜젝션"/>에 대한 제어를 다루는 명령어이다., DCL의 일부로 보기도 한다.
+         - | 명령어    | 설명                    |
+           | --------- | ----------------------- |
+           | COMMIT    | 변경 내용 확정(저장)    |
+           | ROLLBACK  | 이전 상태로 복구(최소)  |
+           | SAVEPOINT | 트랜잭션 중간 지점 설정 |
+         - ```sql
+              -- 데이터 삽입
+              INSERT INTO EMPLOYEE VALUES (2, 'Minji', 102, 4000);
 
-                UPDATE EMPLOYEE SET SALARY = 3500 WHERE EMP_ID = 2;
+              -- 저장 지점 설정
+              SAVEPOINT point1;
 
-                -- 롤백 (point1 이후의 변경 취소)
-                ROLLBACK TO point1;
+              UPDATE EMPLOYEE SET SALARY = 3500 WHERE EMP_ID = 2;
 
-                -- 최종 확정
-                COMMIT;
-             ```
+              -- 롤백 (point1 이후의 변경 취소)
+              ROLLBACK TO point1;
 
-            - **DELETE VS TRUNCATE VS DROP (데이터 삭제 명령어의 차이점)**
-              - | 구분            | DELETE                            | TRUNCATE              | DROP                 |
-                |---------------|-----------------------------------|-----------------------|----------------------|
-                | **언어 종류**         | DML (데이터 조작어)                     | DDL (데이터 정의어)         | DDL (데이터 정의어)        |
-                | **삭제 대상**         | 테이블의 데이터(행)                       | 테이블의 모든 데이터(행)        | 테이블 자체 (데이터 + 구조 모두) |
-                | **스키마(구조)**       | 유지됨                               | 유지됨                   | 삭제됨                  |
-                | **ROLLBACK (복구)** | 가능 (트랜잭션 로그 남김)                   | 불가능                   | 불가능                  |
-                | **저장공간 릴리즈**      | X (즉시 해제 안됨)                      | O (즉시 해제됨)            | O (완전 해제)            |
-                | **WHERE 절 사용**    | 가능                                | 불가능                   | 불가능                  |
-                | **트랜잭션 로그**       | 각 행마다 기록                          | 최소 기록                 | 없음                   |
-                | **속도**            | 느림                                | 빠름                    | 매우 빠름                |
-                | **사용 예시**         | DELETE FROM table WHERE age > 30; | TRUNCATE TABLE table; | DROP TABLE table;    |
-                | **주요 특징 요약**      | 데이터만 삭제 + 되돌리기 가능                 | 모든 데이터 삭제 + 되돌리기 불가   | 테이블 자체 삭제 + 되돌리기 불가  |
+              -- 최종 확정
+              COMMIT;
+           ```
+
+          - **DELETE VS TRUNCATE VS DROP (데이터 삭제 명령어의 차이점)**
+            - | 구분            | DELETE                            | TRUNCATE              | DROP                 |
+              |---------------|-----------------------------------|-----------------------|----------------------|
+              | **언어 종류**         | DML (데이터 조작어)                     | DDL (데이터 정의어)         | DDL (데이터 정의어)        |
+              | **삭제 대상**         | 테이블의 데이터(행)                       | 테이블의 모든 데이터(행)        | 테이블 자체 (데이터 + 구조 모두) |
+              | **스키마(구조)**       | 유지됨                               | 유지됨                   | 삭제됨                  |
+              | **ROLLBACK (복구)** | 가능 (트랜잭션 로그 남김)                   | 불가능                   | 불가능                  |
+              | **저장공간 릴리즈**      | X (즉시 해제 안됨)                      | O (즉시 해제됨)            | O (완전 해제)            |
+              | **WHERE 절 사용**    | 가능                                | 불가능                   | 불가능                  |
+              | **트랜잭션 로그**       | 각 행마다 기록                          | 최소 기록                 | 없음                   |
+              | **속도**            | 느림                                | 빠름                    | 매우 빠름                |
+              | **사용 예시**         | DELETE FROM table WHERE age > 30; | TRUNCATE TABLE table; | DROP TABLE table;    |
+              | **주요 특징 요약**      | 데이터만 삭제 + 되돌리기 가능                 | 모든 데이터 삭제 + 되돌리기 불가   | 테이블 자체 삭제 + 되돌리기 불가  |
