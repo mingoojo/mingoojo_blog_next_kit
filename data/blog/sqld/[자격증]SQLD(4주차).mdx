@@ -1,0 +1,141 @@
+---
+title: '[SQLD 자격증 공부] Chaper3[part2] - 관계형 데이터베이스 개요 (WEEK 4)'
+date: '2025-09-28'
+tags: ['sqld', 'database', 'license']
+draft: false
+summary: SQLD 4주차 공부 내용을 정리.
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+import InternalLink from '@/components/mdxComponents/InternalLink'
+
+### 7. 조인
+
+    1.  **조인의 개념**
+        - 두개의 테이블을 하나로 병합하는 것
+        - 정규화를 통해 분리된 데이테에서 특정 칼럼들만 선택해 조회하려고 할때, 나누어져있는 데이터를 하나로 재구성 해야하는데 이때 사용되는 병합 연산을 조인이라고 한다.
+        - JOIN [테이블명] ON [조건]의 기본 형태를 가진다. > **SELECT A.ID, B.NAME FROM TABLE1 a JOIN TABLE2 b ON a.id = b.id**
+        - 조인은 O(N^2)의 시간복잡도를 가지므로, 조인을 최소화하는 것이 성능 향상에 도움이 된다. 이를 위해 반정규화를 통해, 성능과 정규화의 기능을 같이 수행한다.
+
+    2.  **EQUI JOIN(Equal Join)**
+        - 등식을 조건으로 사용할 때 발생하는 조인
+        - ```sql
+            SELECT E.EMP_ID, E.NAME, D.DEPT_NAME
+            FROM EMP E
+            JOIN DEPT D
+            ON E.DEPT_ID = D.DEPT_ID; -- 이퀄조인
+          ```
+    3.  **Non EQUI JOIN(Non Equal Join)**
+        - 부등식(BETWEEN, >, \<, >=, \<=)을 조건으로 사용할 때 발생하는 조인
+        - 이퀄조인을 제외한 모든 건 논이퀄조인이라고 할수 있다.
+        - ```sql
+           SELECT E.NAME, E.SALARY, S.GRADE
+            FROM EMP E
+            JOIN SAL_GRADE S
+            ON E.SALARY BETWEEN S.MIN_SAL AND S.MAX_SAL; -- 논이퀄조인
+          ```
+
+    4.  **3개 이상 테이블 조인(Three Way Join)**
+        - 조회 조건이 복잡할 때, 또는 조회하고자 하는 테이블이 3개 이상으로 나누어져있을때 사용하는 조인
+        - 3개 이상의 테이블의 조인은 연산량이 기하급수적으로 증가하므로, 조회성능이 매우 하락할 수 있다.
+        - ```sql
+          SELECT  E.NAME,
+                  D.DEPT_NAME,
+                  L.CITY,
+                  E.SALARY
+          FROM EMP E
+          JOIN DEPT D
+            ON E.DEPT_ID = D.DEPT_ID
+          JOIN LOCATION L
+            ON D.LOC_ID = L.LOC_ID;
+          ```
+    5.  **OUTER JOIN**
+        - 조인 조건에 맞지 않는 행까지 조회하는 포괄적인 조인 연산법
+        - LEFT OUTER JOIN, RIGHT OUTER JOIN, FULL OUTER JOIN 으로 나뉜다.
+
+### 7. 표준조인
+
+    - 표준조인 :  예전에는 DBMS마다 SQL 문법이 조금씩 다른 문제가 있었고 이걸 해결하기 위해 SQL 표준 문법(ANSI SQL)를 만들었다. 이걸 표준조인이라고 한다.
+    - 표준 조인의 종류
+      - | 종류               | 설명                                 | 예시                            |
+        |------------------|------------------------------------|-------------------------------|
+        | INNER JOIN(=JOIN)       | 두 테이블에서 조건이 일치하는 행만 조회             | A INNER JOIN B ON A.id = B.id |
+        | LEFT OUTER JOIN  | 왼쪽 테이블의 모든 행 + 일치하는 오른쪽 행          | A LEFT JOIN B ON A.id = B.id  |
+        | RIGHT OUTER JOIN | 오른쪽 테이블의 모든 행 + 일치하는 왼쪽 행          | A RIGHT JOIN B ON A.id = B.id |
+        | FULL OUTER JOIN  | 양쪽 테이블의 모든 행을 포함, 일치하지 않는 쪽은 NULL  | A FULL JOIN B ON A.id = B.id  |
+        | NATURAL JOIN     | 동일한 컬럼명을 기준으로 자동 조인(ON 구문 사용 안함)                | A NATURAL JOIN B              |
+        | CROSS JOIN       | 모든 행을 곱집합(Cartesian Product) 으로 조합(ON 구문 사용 안함) | A CROSS JOIN B                |
+    - 표준 조인 형태
+        - FROM [테이블 1] JOIN [테이블 2] ON [조건]
+        - 테이블 1 : 왼쪽에 해당
+        - 테이블 2 : 오른쪽에 해당
+        - 조건 : 조인을 수행알 기준을 명시
+
+    1.  **INNER JOIN(=JOIN)**
+        - 두 개의 테이블을 조인할 때 해당 조건에 맞는 결과만 출력하는 형태
+        - A 교집합 B의 형태
+
+    2.  **OUTER JOIN(=JOIN)**
+        - 합집합의 개념이다. LEFT OUTER JOIN, RIGHT OUTER JOIN, FULL OUTER JOIN에 따라 교집합에 어떤 항목을 포함할지를 정함
+        1. Left Outer Join
+            - 왼쪽의 테이블을 모두 포함하는 조인.
+            - (A 교집합 B) + (A 차집합 B)의 형태
+        2. Right Outer Join
+            - 오른쪽의 테이블을 모두 포함하는 조인.
+            - (A 교집합 B) + (B 차집합 A)의 형태
+        2. Full Outer Join
+            - 합집합의 형태
+            - (A 합집합 B)의 형태
+    3.  **NATURAL JOIN**
+        - 조인의 대상이 되는 두 테이블에서 같은 이름의 칼럼의 값이 동일한 것만 병합되는 조인.
+        - EMP TABLE
+            - | EMP_ID | NAME | DEPT_ID |
+              |--------|------|---------|
+              | 1      | 홍길동  | 10      |
+              | 2      | 김철수  | 20      |
+              | 3      | 이영희  | 30      |
+        - DEPT TABLE
+            - | DEPT_ID | DEPT_NAME |
+              |---------|-----------|
+              | 10      | 인사부       |
+              | 20      | 총무부       |
+        - ```sql
+          SELECT *
+          FROM EMP
+          NATURAL JOIN DEPT; -- 같은속성(DEPT_ID)을 비교해서 값이 같으면 조인해서 테이블 출력
+          ```
+         - 실행결과
+            - | EMP_ID | NAME | DEPT_ID | DEPT_NAME |
+                |--------|------|---------|-----------|
+                | 1      | 홍길동  | 10      | 인사부       |
+                | 2      | 김철수  | 20      | 총무부       |
+            - EMP와 DEPT에서 같은속성(DEPT_ID)을 비교해서 값이 같으면 조인해서 테이블 출력
+    4.  **CROSS JOIN**
+        - 조인의 대상이 되는 두 테이블에서 모든 대응되는 경우의 수를 전부 출력한다.
+        - 행의 갯수가 각각 M, N개이면 출력되는 행의 갯수는 M x N 개이다.
+        - EMP TABLE
+            - | EMP_ID | NAME | DEPT_ID |
+              |--------|------|---------|
+              | 1      | 홍길동  | 10      |
+              | 2      | 김철수  | 20      |
+              | 3      | 이영희  | 30      |
+        - DEPT TABLE
+            - | DEPT_ID | DEPT_NAME |
+              |---------|-----------|
+              | 10      | 인사부       |
+              | 20      | 총무부       |
+        - ```sql
+          SELECT *
+          FROM EMP
+          CROSS JOIN DEPT; -- 두테이블을 비교해서 모든 경우의 수를 출력한다.
+          ```
+        - 실행결과
+          - | EMP_ID | NAME | DEPT_ID (EMP) | DEPT_ID (DEPT) | DEPT_NAME |
+            |--------|------|---------------|----------------|-----------|
+            | 1      | 홍길동  | 10            | 10             | 인사부       |
+            | 1      | 홍길동  | 10            | 20             | 총무부       |
+            | 2      | 김철수  | 20            | 10             | 인사부       |
+            | 2      | 김철수  | 20            | 20             | 총무부       |
+            | 3      | 이영희  | 30            | 10             | 인사부       |
+            | 3      | 이영희  | 30            | 20             | 총무부       |
+          - EMP와 DEPT의 모든 조합 가능한 경우의 수를 출력한다.
