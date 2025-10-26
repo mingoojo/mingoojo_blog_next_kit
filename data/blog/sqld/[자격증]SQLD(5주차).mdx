@@ -1,0 +1,214 @@
+---
+title: '[SQLD 자격증 공부] Chaper4 - SQL 활용 (WEEK 5)'
+date: '2025-10-05'
+tags: ['sqld', 'database', 'license']
+draft: false
+summary: SQLD 5주차 공부 내용을 정리.
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+import InternalLink from '@/components/mdxComponents/InternalLink'
+
+### 1. 서브쿼리
+
+    - 서브쿼리(Subquery) 는 쿼리(Query) 안에 또 다른 쿼리를 포함하는 것.
+    - SELECT, INSERT, UPDATE, DELETE 문 안에서 하위 질의문을 작성하는 방식.
+      - 메인쿼리(Main Query): 전체 결과를 반환하는 외부 쿼리
+      - 서브쿼리(Sub Query): 메인쿼리의 일부로 먼저 실행되어 메인쿼리에 데이터를 제공
+      - ```sql
+        SELECT NAME, SALARY -- 메인 쿼리
+        FROM EMP
+        WHERE SALARY > ( -- 괄호안 => 서브쿼리 = 서브쿼리의 결과를 WHERE절로 사용하는 구문
+            SELECT AVG(SALARY)
+            FROM EMP
+        );
+        ```
+    - 들어가는 위치에 따른 분류
+      - | 구분       | 설명                       | 사용 위치         |
+        |----------|--------------------------|---------------|
+        | 스칼라 서브쿼리 | SELECT 절 안에서 1행 1열 반환    | SELECT        |
+        | 인라인 뷰    | FROM절에 포함된 서브쿼리          | FROM          |
+        | 중첩 서브쿼리  | WHERE, HAVING절에 포함된 서브쿼리 | WHERE, HAVING |
+
+
+    1.  **스칼라 서브쿼리**
+        > 각 행(row)에 대해 하나의 값만 계산해서 칼럼처럼 보여주는 서브쿼리
+
+        - SELECT문의 칼럼이 입력되는 위치에 들어가는 서브쿼리
+        - 스칼라 서브쿼리의 결과는 하나의 칼럼만 같는다.
+        - ```sql
+          SELECT NAME, --메인 쿼리
+          ( --서브 쿼리(스칼라서브쿼리)
+            SELECT DEPT_NAME
+            FROM DEPT
+            WHERE DEPT_ID = E.DEPT_ID
+            ) AS DEPT_NAME
+          FROM EMP E;
+          ```
+        - 같은의미의 조인 문으로 아래와 같이 표현할 수 있다.
+          - ```sql
+            SELECT E.NAME, D.DEPT_NAME
+            FROM EMP E
+            JOIN DEPT D
+            ON E.DEPT_ID = D.DEPT_ID;
+            ```
+    2.  **인라인 뷰**
+
+        >SELECT문 안에 잠깐 만들어 쓰는 즉석 테이블
+
+        - FROM절의 테이블이 입력되는 위치에 들어가는 서브쿼리이다.
+        - 쿼리 실행시 뷰(VIEW)와 같이 동적으로 생성되는 테이블
+        - ```sql
+          SELECT DEPT_ID, AVG_SAL --메인 쿼리
+          FROM ( --서브 쿼리(인라인 뷰)
+              SELECT DEPT_ID, AVG(SALARY) AS AVG_SAL
+              FROM EMP
+              GROUP BY DEPT_ID
+          ) TEMP
+          WHERE AVG_SAL >= 4000;
+          ```
+    3.  **중첩서브 쿼리**
+
+        >조건을 만들기 위해 안쪽에서 먼저 SELECT 한 뒤, 그 결과를 바깥쪽 쿼리의 조건으로 사용하는 방식
+
+        - 쿼리 안에 다른 쿼리가 중첩으로 들어간 경우를 지칭.
+        - WHERE절과 HAVING절에 들어간 경우.
+        - 반환값 유형에 따라 다음과 같이 분류된다.
+          - | 구분        | 설명        | 사용 위치                  | 예시                                |
+            |-----------|-----------|------------------------|-----------------------------------|
+            | 단일행 중첩 서브쿼리  | 결과 1행만 반환 | WHERE                  | SALARY > (SELECT AVG(SALARY) ...) |
+            | 다중행 중첩 서브쿼리  | 여러 행 반환   | WHERE + IN / ANY / ALL | DEPT_ID IN (SELECT DEPT_ID ...)   |
+            | 다중컬럼 중첩 서브쿼리 | 여러 컬럼 비교  | WHERE                  | (DEPT_ID, SALARY) IN (...)        |
+          - 단일행 중첩 서브쿼리 예시
+            - ```sql
+              SELECT NAME, SALARY --메인 쿼리: 그 평균보다 높은 급여를 가진 직원 조회
+              FROM EMP
+              WHERE SALARY > ( --내부 쿼리: 전체 직원의 평균 급여 계산
+                  SELECT AVG(SALARY)
+                  FROM EMP
+              );
+              ```
+          - 다중행 중첩 서브쿼리 예시
+            - ```sql
+              SELECT NAME --	메인쿼리: 그 부서ID에 속한 직원만 조회
+              FROM EMP
+              WHERE DEPT_ID IN ( --서브쿼리: LOC_ID=100인 부서ID 목록 반환
+                  SELECT DISTINCT DEPT_ID -- DISTINCT : 중복 제거
+                  FROM DEPT
+                  WHERE LOC_ID = 100
+              );
+              ```
+          - 다중컬럼 중첩 서브쿼리 예시
+            - ```sql
+              SELECT NAME --	메인쿼리: 직업과 급여가 서브쿼리와 매칭되는 직원(직업별로 급여가 가장 높은 사람의 정보)를 출력한다.
+              FROM EMP
+              WHERE (JOB, SAL) IN ( --서브쿼리: 직업별로 가장 높은 급여를 출력
+                  SELECT JOB, MAX(SAL)
+                  FROM EMP
+                  GROUP BY JOB
+              );
+              ```
+          - HAVING절에서 중첩 서브쿼리 예시
+            - ```sql
+              SELECT DEPT_ID, AVG(SALARY) AS AVG_SAL
+              FROM EMP
+              GROUP BY DEPT_ID
+              HAVING AVG(SALARY) > ( --HAVING절: 부서별 평균이 전체 평균보다 큰 부서만 필터링
+                  SELECT AVG(SALARY) --서브쿼리: 전체 평균 급여 계산
+                  FROM EMP
+              );
+              ```
+    - 테이블과 뷰의 차이
+      - | 구분       | 테이블 (Table)               | 뷰 (View)                        |
+        |----------|---------------------------|---------------------------------|
+        | 정의       | 실제 데이터가 저장되는 물리적 구조       | SELECT문 결과를 저장한 가상의 테이블         |
+        | 저장 여부    | 데이터를 직접 저장                | 데이터 저장하지 않음 (조회 시 원본 테이블에서 가져옴) |
+        | 생성 방식    | CREATE TABLE              | CREATE VIEW AS SELECT ...       |
+        | 데이터 변경   | INSERT, UPDATE, DELETE 가능 | 일반적으로 불가능 (단, 단순 뷰는 가능)         |
+        | 용도       | 데이터를 영구적으로 보관             | 데이터를 필터링/요약/보안 목적 으로 보여줌        |
+        | 성능       | 빠름 (실제 데이터에 접근)           | 상대적으로 느림 (실시간으로 원본에서 읽음)        |
+        | 삭제 명령어   | DROP TABLE                | DROP VIEW                       |
+        | 공간 차지 여부 | 실제 디스크 공간 사용              | 거의 없음 (SELECT 정의문만 저장됨)         |
+
+### 2. 집합연산자
+
+    - 두 테이블에 대한 집합연산(합집합, 교집합 등)을 수행하는 연산자이다.
+    - JOIN과 달리 기준이 되는 키(기준 칼럼/속성)가 없이 집합 연산을 수행한다.
+    - 두 테이블의 <InternalLink link="schema" name="스키마"/>가 동일해야한다.
+    - 집합 연산자 종류
+        - | 연산자               | 설명                | 특징                        |
+          |-------------------|-------------------|---------------------------|
+          | UNION             | 두 결과를 합집합 (중복 제거) | 기본값: DISTINCT             |
+          | UNION ALL         | 합집합 (중복 포함)       | 빠름, 중복 제거 X               |
+          | INTERSECT         | 교집합               | 양쪽 SELECT 모두에 존재하는 행      |
+          | MINUS (또는 EXCEPT) | 차집합               | 첫 번째 SELECT 결과에서 두 번째를 제외 |
+
+    1.  **UNION/ UNION ALL**
+        >합집합 연산을 수행
+        - 두 테이블에 모든 레코드를 포함시키는 연산을 진행한다.
+        - UNION은 중복을 제거, UNION ALL은 중복을 허락한다. 그래서 UNION ALL에서는 값이 같은 항목이 여러개 존재할 수 있다.
+        - 예시
+            - | EMP_ID | NAME | DEPT |
+              |--------|------|------|
+              | 1      | 민수   | 개발팀  |
+              | 2      | 지현   | 인사팀  |
+              | 3      | 영호   | 개발팀  |
+            - | EMP_ID | NAME | DEPT |
+              |--------|------|------|
+              | 4      | 하나   | 개발팀  |
+              | 5      | 사토   | 인사팀  |
+              | 6      | 민수   | 개발팀  |
+
+            - UNION(합집합, 중복 제거)
+              - ```sql
+                SELECT NAME, DEPT FROM EMP_A
+                UNION
+                SELECT NAME, DEPT FROM EMP_B;
+                ```
+              - | NAME | DEPT |
+                |------|------|
+                | 민수   | 개발팀  |
+                | 지현   | 인사팀  |
+                | 영호   | 개발팀  |
+                | 하나   | 개발팀  |
+                | 사토   | 인사팀  |
+            - UNION ALL(합집합, 중복 허락)
+              - ```sql
+                SELECT NAME, DEPT FROM EMP_A
+                UNION ALL
+                SELECT NAME, DEPT FROM EMP_B;
+                ```
+              - | NAME | DEPT |
+                |------|------|
+                | 민수   | 개발팀  |
+                | 지현   | 인사팀  |
+                | 영호   | 개발팀  |
+                | 하나   | 개발팀  |
+                | 사토   | 인사팀  |
+                | 민수   | 개발팀  |
+
+    2.  **INTERSECT**
+        >교집합 연산을 수행
+        - 두 테이블에 공통 포함 레코드만 출력
+        - 예시
+            - ```sql
+              SELECT NAME, DEPT FROM EMP_A
+              INTERSECT
+              SELECT NAME, DEPT FROM EMP_B;
+              ```
+            - | NAME | DEPT |
+              |------|------|
+              | 민수   | 개발팀  |
+    3.  **MINUS / EXCEPT**
+        >차집합 연산을 수행
+        - 왼쪽 테이블에서 두 테이블에 공통적으로 포함되는 레코드를 제외한 값을 출력
+        - 예시
+            - ```sql
+              SELECT NAME, DEPT FROM EMP_A
+              MINUS--DBMS에따라 MINUS대신 EXCEPT를 사용
+              SELECT NAME, DEPT FROM EMP_B;
+              ```
+            - | NAME | DEPT |
+              |------|------|
+              | 지현   | 인사팀  |
+              | 영호   | 개발팀  |
