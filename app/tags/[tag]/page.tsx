@@ -14,6 +14,7 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params
   const tag = decodeURI(params.tag)
+  console.log(params, tag)
   return genPageMetadata({
     title: tag,
     description: `${siteMetadata.title} ${tag} tagged content`,
@@ -47,6 +48,7 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
     currentPage: 1,
     totalPages: totalPages,
   }
+
 
   return (
     <ListLayout
