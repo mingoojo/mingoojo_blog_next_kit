@@ -10,12 +10,42 @@ export default function Home({ posts }) {
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
         <div className="space-y-2 pt-6 pb-8 md:space-y-5">
-          <h1 className="text-3xl leading-9 font-extrabold tracking-tight text-gray-900 sm:text-4xl sm:leading-10 md:text-6xl md:leading-14 dark:text-gray-100">
-            Latest
+          <div className='flex flex-col justify-center items-center h-100 rounded-3xl dark:bg-gray-200'>
+            <h1 className="text-3xl leading-9 font-extrabold tracking-tight text-gray-900 sm:text-4xl sm:leading-10 md:text-5xl md:leading-14 dark:text-gray-800">
+              Hi, I'm{' '}
+              <span className="relative">
+                <span className="relative z-10">Mingoo Jo</span>
+                <span className="absolute inset-x-0 bottom-1 h-3 bg-yellow-400 opacity-80 rounded-md"></span>
+              </span>
+            </h1>
+            <h1 className="text-3xl leading-9 font-extrabold tracking-tight text-gray-900 sm:text-4xl sm:leading-10 md:text-4xl md:leading-14 dark:text-gray-800">
+              web developer
+            </h1>
+            <Link
+              href="/about"
+              className="mt-2 inline-block px-4 py-2 font-semibold text-white bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full shadow-md hover:from-indigo-600 hover:to-blue-600 dark:from-indigo-400 dark:to-blue-400 dark:hover:from-indigo-500 dark:hover:to-blue-500 transition-transform transform hover:scale-105"
+            >
+              더보기 →
+            </Link>
+          </div>
+        </div>
+        <div className="space-y-2 pt-6 pb-8 md:space-y-5">
+          <h1 className="text-3xl leading-9 font-extrabold tracking-tight text-gray-900 sm:text-4xl sm:leading-10 md:text-4xl md:leading-14 dark:text-gray-100">
+            최근 글
           </h1>
           <p className="text-lg leading-7 text-gray-500 dark:text-gray-400">
             {siteMetadata.description}
           </p>
+          {posts.length > MAX_DISPLAY && (
+            <div className="flex justify-end text-base leading-6 font-medium">
+              <Link
+                href="/blog"
+                className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400"
+                aria-label="All posts">
+                All Posts &rarr;
+              </Link>
+            </div>
+          )}
         </div>
         <ul className="divide-y divide-gray-200 dark:divide-gray-700">
           {!posts.length && 'No posts found.'}
@@ -67,16 +97,6 @@ export default function Home({ posts }) {
           })}
         </ul>
       </div>
-      {posts.length > MAX_DISPLAY && (
-        <div className="flex justify-end text-base leading-6 font-medium">
-          <Link
-            href="/blog"
-            className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400"
-            aria-label="All posts">
-            All Posts &rarr;
-          </Link>
-        </div>
-      )}
     </>
   )
 }

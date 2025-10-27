@@ -14,7 +14,6 @@ export async function generateMetadata(props: {
 }): Promise<Metadata> {
   const params = await props.params
   const tag = decodeURI(params.tag)
-  console.log(params, tag)
   return genPageMetadata({
     title: decodeURI(tag),
     description: `${siteMetadata.title} ${tag} tagged content`,

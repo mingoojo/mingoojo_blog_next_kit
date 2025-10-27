@@ -1,5 +1,5 @@
 ---
-title: '[SQLD 자격증 공부] Chaper4 - SQL 활용 (WEEK 5)'
+title: '[SQLD 자격증 공부] Chaper4[part1] - SQL 활용 (WEEK 5)'
 date: '2025-10-05'
 tags: ['sqld', 'database', 'license']
 draft: false
@@ -212,3 +212,296 @@ import InternalLink from '@/components/mdxComponents/InternalLink'
               |------|------|
               | 지현   | 인사팀  |
               | 영호   | 개발팀  |
+
+### 3. 그룹함수
+
+    - GROUP BY절에 따른 결과에 대해서 그룹 별로 연산을 수행하는 함수.
+    - 해당 그룹에 집계함수(갯수, 합, 평균, 최댓값, 최솟값)와 함께 ROLLUP, CUBE등의 함수가 여기에 포함된다.
+    1. ROLLUP
+        - GROUP BY절에 들어가는 칼럼을 대상으로 하위 그룹핑을 수행하는 함수.
+        - 소계와 총계를 구할 때 사용.
+        - 예시
+          - | DEPT  | JOB     | TOTAL_SAL |
+            |-------|---------|-----------|
+            | HR    | CLERK   | 1200      |
+            | IT    | ANALYST | 3000      |
+            | IT    | CLERK   | 1500      |
+            | SALES | CLERK   | 1000      |
+            | SALES | MANAGER | 4500      |
+          - ```sql
+            SELECT DEPT, JOB, SUM(SAL) AS TOTAL_SAL
+            FROM EMP
+            GROUP BY ROLLUP(DEPT, JOB);
+            ```
+          - | DEPT  | JOB     | TOTAL_SAL             |
+            |-------|---------|-----------------------|
+            | HR    | CLERK   | 1200                  |
+            | HR    | NULL    | 1200 ⬅ (HR 부서의 소계)    |
+            | IT    | ANALYST | 3000                  |
+            | IT    | CLERK   | 1500                  |
+            | IT    | NULL    | 4500 ⬅ (IT 부서의 소계)    |
+            | SALES | CLERK   | 1000                  |
+            | SALES | MANAGER | 4500                  |
+            | SALES | NULL    | 5500 ⬅ (SALES 부서의 소계) |
+            | NULL  | NULL    | 11200 ⬅ (전체 총계)       |
+          - 정리
+            - 목적 : 하위 그룹별 소계와 총계를 자동 계산
+            - 사용 위치 : GROUP BY ROLLUP(컬럼1, 컬럼2, …)
+            - NULL 의미 : 소계 또는 총계 행
+            - 특징
+              - ROLLUP 안 컬럼 순서가 계층 구조를 결정함
+              - **집계 함수**(SUM(), COUNT(), AVG(), MAX(), MIN())이 있어야 ROLLUP이 작동
+    2. CUBE
+        - ROLLUP과 달리 조합가능한 모든 경우의 수로 그룹핑을 진행하여 집계 결과값을 반환한다.
+          - 예시
+            - | DEPT  | JOB     | TOTAL_SAL |
+              |-------|---------|-----------|
+              | HR    | CLERK   | 1200      |
+              | IT    | ANALYST | 3000      |
+              | IT    | CLERK   | 1500      |
+              | SALES | CLERK   | 1000      |
+              | SALES | MANAGER | 4500      |
+            - ```sql
+              SELECT DEPT, JOB, SUM(SAL) AS TOTAL_SAL
+              FROM EMP
+              GROUP BY CUBE(DEPT, JOB);
+              ```
+            - | DEPT  | JOB     | TOTAL_SAL | 설명                         |
+              |-------|---------|-----------|----------------------------|
+              | HR    | CLERK   | 1200      | HR 부서, CLERK 직급 합계         |
+              | HR    | NULL    | 1200      | HR 부서 전체 합계                |
+              | IT    | ANALYST | 3000      | IT 부서, ANALYST 직급 합계       |
+              | IT    | CLERK   | 1500      | IT 부서, CLERK 직급 합계         |
+              | IT    | NULL    | 4500      | IT 부서 전체 합계                |
+              | SALES | CLERK   | 1000      | SALES 부서, CLERK 직급 합계      |
+              | SALES | MANAGER | 4500      | SALES 부서, MANAGER 직급 합계    |
+              | SALES | NULL    | 5500      | SALES 부서 전체 합계             |
+              | NULL  | CLERK   | 3700      | 직급별 소계 (모든 부서의 CLERK 합계)   |
+              | NULL  | MANAGER | 4500      | 직급별 소계 (모든 부서의 MANAGER 합계) |
+              | NULL  | ANALYST | 3000      | 직급별 소계 (모든 부서의 ANALYST 합계) |
+              | NULL  | NULL    | 11200     | 전체 총계                      |
+          - 정리
+            - 목적 : 모든 컬럼 조합별 집계 결과 생성
+            - 사용 위치 : GROUP BY CUBE(컬럼1, 컬럼2, …)
+            - NULL 의미 : 소계 또는 총계 행
+            - 특징
+              - ROLLUP은 “단계적 합계”, CUBE는 “모든 조합 합계”
+              - **집계 함수**(SUM(), COUNT(), AVG(), MAX(), MIN())이 있어야 CUBE가 작동
+    3. GROUPING SET
+        - 그룹핑할 대상을 지정하는 함수
+        - 여러 GROUP BY 쿼리를 UNION ALL로 합친 것과 같은 결과를
+          - 예시
+            - | DEPT  | JOB     | TOTAL_SAL |
+              |-------|---------|-----------|
+              | HR    | CLERK   | 1200      |
+              | IT    | ANALYST | 3000      |
+              | IT    | CLERK   | 1500      |
+              | SALES | CLERK   | 1000      |
+              | SALES | MANAGER | 4500      |
+            - ```sql
+              SELECT DEPT, JOB, SUM(SAL) AS TOTAL_SAL
+              FROM EMP
+              GROUP BY GROUPING SETS (DEPT, JOB);
+              ```
+            - | DEPT  | JOB     | TOTAL_SAL | 설명     |
+              |-------|---------|-----------|--------|
+              | HR    | NULL    | 1200      | 부서별 합계 |
+              | IT    | NULL    | 4500      | 부서별 합계 |
+              | SALES | NULL    | 5500      | 부서별 합계 |
+              | NULL  | CLERK   | 3700      | 직급별 합계 |
+              | NULL  | MANAGER | 4500      | 직급별 합계 |
+              | NULL  | ANALYST | 3000      | 직급별 합계 |
+    3. GROUPING
+        > 집계 결과에 나타나는 NULL 값이 **실제 데이터의 NULL**인지,아니면 **소계/총계 행을 의미하는 NULL**인지를 구분
+        - 집계 결과(ROLLUP, CUBE, GROUPING SETS 등)에서 해당 컬럼이 실제 그룹에 포함되었는지(또는 집계된 결과인지) 를 구분할 때 사용
+        - 기본문법
+          - ```sql
+            SELECT 컬럼1, 컬럼2, SUM(컬럼3),
+            GROUPING(컬럼1) AS G1,
+            GROUPING(컬럼2) AS G2
+            FROM 테이블
+            GROUP BY ROLLUP(컬럼1, 컬럼2);
+            ```
+          - 예시
+            - | DEPT  | JOB     | SAL  |
+              |-------|---------|------|
+              | SALES | CLERK   | 1000 |
+              | SALES | MANAGER | 2500 |
+              | IT    | CLERK   | 1500 |
+              | IT    | ANALYST | 3000 |
+            - ```sql
+              SELECT
+                DEPT,
+                JOB,
+                SUM(SAL) AS TOTAL_SAL,
+                GROUPING(DEPT) AS G_DEPT,
+                GROUPING(JOB) AS G_JOB
+              FROM EMP
+              GROUP BY ROLLUP(DEPT, JOB);
+              ```
+            - | DEPT  | JOB     | TOTAL_SAL | G_DEPT | G_JOB | 설명(출력 속성 X)     |
+              |-------|---------|-----------|--------|-------|--------|
+              | IT    | ANALYST | 3000      | 0      | 0     | 실제 데이터 |
+              | IT    | CLERK   | 1500      | 0      | 0     | 실제 데이터 |
+              | IT    | NULL    | 4500      | 0      | 1     | 부서별 소계 |
+              | SALES | CLERK   | 1000      | 0      | 0     | 실제 데이터 |
+              | SALES | MANAGER | 2500      | 0      | 0     | 실제 데이터 |
+              | SALES | NULL    | 3500      | 0      | 1     | 부서별 소계 |
+              | NULL  | NULL    | 8000      | 1      | 1     | 전체 총계  |
+
+### 4. 윈도우함수
+
+    - 행과 행간의 관계를 나타내는 연산을 쉽게하기 위한 함수
+    - 집계 함수(또는 순위 함수) + 행 단위 결과를 함께 보여주는 함수
+
+    >GROUP BY 집계와 달리 행이 줄어들지 않고,각 행을 기준으로 주변 행들을 포함해 계산한 결과를 같은 행에 표시.
+
+    1. OVER 절
+        - OVER() 절은 윈도우 함수가 계산되는 기준과 범위를 지정하는 구문
+        - 이 함수를 어떤 그룹(PARTITION) 안에서, 어떤 순서(ORDER), 어떤 범위(ROWS)로 계산할지 정한다.
+          - OVER 절 기본 구조
+              - ```sql
+                함수() OVER (
+                    [PARTITION BY ...]
+                    [ORDER BY ...]
+                    [ROWS | RANGE ...]
+                )
+                ```
+              - | 사용 형태                                                        | 설명                  | 예시                                                                                     |
+                |--------------------------------------------------------------|---------------------|----------------------------------------------------------------------------------------|
+                | OVER()                                                       | 전체 데이터를 하나의 윈도우로 계산 | SUM(SAL) OVER()                                                                        |
+                | OVER(PARTITION BY ...)                                       | 그룹 단위로 나누어 계산       | SUM(SAL) OVER(PARTITION BY DEPT)                                                       |
+                | OVER(ORDER BY ...)                                           | 전체 데이터에 순서를 매겨 계산   | RANK() OVER(ORDER BY SAL DESC)                                                         |
+                | OVER(PARTITION BY ... ORDER BY ...)                          | 그룹 내부에서 순서를 매겨 계산   | RANK() OVER(PARTITION BY DEPT ORDER BY SAL DESC)                                       |
+                | OVER(ORDER BY ... ROWS BETWEEN ... AND ...)                  | 순서 + 특정 행 범위에서 계산   | SUM(SAL) OVER(ORDER BY SAL ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)                   |
+                | OVER(PARTITION BY ... ORDER BY ... ROWS BETWEEN ... AND ...) | 그룹 내 특정 행 범위 계산     | AVG(SAL) OVER(PARTITION BY DEPT ORDER BY SAL ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) |
+                1.  PARTITION BY
+                    - 데이터를 논리적으로 그룹(파티션) 으로 나누어 윈도우 함수 적용.
+                    - ```sql
+                        AVG(SAL) OVER(PARTITION BY DEPT)
+                      ```
+                2.  ORDER BY
+                    - 각 파티션 내부에서 순서를 지정.
+                    - RANK(), ROW_NUMBER(), LAG(), LEAD() 등에 필수.
+                    - ```sql
+                        RANK() OVER(ORDER BY SAL DESC)
+                      ```
+    2. 순위 함수
+        - 순위를 계산하는 함수로, RANK, DENSE_RANK, ROW_NUMBER가 있다.
+        - | 함수           | 동점 처리        | 순위 건너뜀    | 특징                |
+          |--------------|--------------|-----------|-------------------|
+          | RANK()       | 같은 값이면 같은 순위 | ✅ 건너뜀     | 경기 등수(1, 1, 3, 4) |
+          | DENSE_RANK() | 같은 값이면 같은 순위 | ❌ 건너뛰지 않음 | 1, 1, 2, 3 처럼 연속  |
+          | ROW_NUMBER() | 항상 고유한 번호    | ❌ 건너뛰지 않음 | 행마다 고유번호(1,2,3,4) |
+
+    3. 집계 함수
+        - 일반적인 집계함수와 비슷하나 OVER절을 활용하여 파티션별로 집계, 누적 집계할 수 있다.
+        - GROUP BY와 달리 그룹별로 하나의 행으로 줄이는 게 아니라 모든 행을 그대로 유지하면서 집계값을 함께 보여준다
+        - 기본문법
+          - ```sql
+              집계함수(컬럼) OVER (
+                [PARTITION BY ...]
+                [ORDER BY ...]
+                [ROWS | RANGE ...]
+              )
+            ```
+
+    4. 행순서 함수
+        - | 함수            | 설명          | 예시       |
+          |---------------|-------------|----------|
+          | LAG()         | 이전 행 값      | 전월 대비 비교 |
+          | LEAD()        | 다음 행 값      | 다음 행과 비교 |
+          | FIRST_VALUE() | 그룹 내 첫 번째 값 | 가장 낮은 급여 |
+          | LAST_VALUE()  | 그룹 내 마지막 값  | 가장 높은 급여 |
+
+
+    5. 윈도우 함수 예시
+        - 기본 문법
+          - ```sql
+              함수명(컬럼명) OVER (
+              PARTITION BY 컬럼A
+              ORDER BY 컬럼B
+              ROWS BETWEEN ~
+              )
+            ```
+          - | 구성 요소            | 설명                                   |
+            |------------------|--------------------------------------|
+            | 함수명()            | 사용할 윈도우 함수 (SUM, AVG, ROW_NUMBER, 등) |
+            | OVER             | 윈도우 함수임을 명시                          |
+            | PARTITION BY     | 그룹 기준 (GROUP BY와 유사)                 |
+            | ORDER BY         | 정렬 기준 (순서 정의)                        |
+            | ROWS BETWEEN ... | 윈도우 범위 설정 (생략 시 기본은 “처음부터 현재 행까지”)   |
+          - 예시
+              - | DEPT  | ENAME | SAL  |
+                |-------|-------|------|
+                | SALES | A     | 1000 |
+                | SALES | B     | 1200 |
+                | SALES | C     | 1500 |
+                | IT    | D     | 2000 |
+                | IT    | E     | 3000 |
+                - ```sql
+                  --누적합 구하기
+                  SELECT
+                    DEPT,
+                    ENAME,
+                    SAL,
+                    SUM(SAL) OVER (PARTITION BY DEPT ORDER BY SAL) AS CUM_SAL
+                  FROM EMP;
+                  ```
+                - | DEPT  | ENAME | SAL  | CUM_SAL |
+                  |-------|-------|------|---------|
+                  | IT    | D     | 2000 | 2000    |
+                  | IT    | E     | 3000 | 5000    |
+                  | SALES | A     | 1000 | 1000    |
+                  | SALES | B     | 1200 | 2200    |
+                  | SALES | C     | 1500 | 3700    |
+                - ```sql
+                  --순위 구하기
+                  SELECT
+                    ENAME,
+                    DEPT,
+                    SAL,
+                    RANK() OVER (PARTITION BY DEPT ORDER BY SAL DESC) AS RANK,
+                    DENSE_RANK() OVER (PARTITION BY DEPT ORDER BY SAL DESC) AS D_RANK,
+                    ROW_NUMBER() OVER (PARTITION BY DEPT ORDER BY SAL DESC) AS ROW_NUM
+                  FROM EMP;
+                  ```
+                - | DEPT  | ENAME | SAL  | RANK | D_RANK | ROW_NUM |
+                  |-------|-------|------|------|--------|---------|
+                  | IT    | E     | 3000 | 1    | 1      | 1       |
+                  | IT    | D     | 2000 | 2    | 2      | 2       |
+                  | SALES | C     | 1500 | 1    | 1      | 1       |
+                  | SALES | B     | 1200 | 2    | 2      | 2       |
+                  | SALES | A     | 1000 | 3    | 3      | 3       |
+                - ```sql
+                  --평균 비교
+                  SELECT
+                    DEPT,
+                    ENAME,
+                    SAL,
+                    AVG(SAL) OVER (PARTITION BY DEPT) AS AVG_SAL
+                  FROM EMP;
+                  ```
+                - | DEPT  | ENAME | SAL  | AVG_SAL |
+                  |-------|-------|------|---------|
+                  | IT    | D     | 2000 | 2500    |
+                  | IT    | E     | 3000 | 2500    |
+                  | SALES | A     | 1000 | 1233    |
+                  | SALES | B     | 1200 | 1233    |
+                  | SALES | C     | 1500 | 1233    |
+                - ```sql
+                  --이전 다음 행 조회
+                  SELECT
+                    ENAME,
+                    SAL,
+                    LAG(SAL) OVER (ORDER BY SAL) AS PREV_SAL,
+                    LEAD(SAL) OVER (ORDER BY SAL) AS NEXT_SAL
+                  FROM EMP;
+                  ```
+                - | ENAME | SAL  | PREV_SAL | NEXT_SAL |
+                  |-------|------|----------|----------|
+                  | A     | 1000 | NULL     | 1200     |
+                  | B     | 1200 | 1000     | 1500     |
+                  | C     | 1500 | 1200     | 2000     |
+                  | D     | 2000 | 1500     | 3000     |
+                  | E     | 3000 | 2000     | NULL     |
