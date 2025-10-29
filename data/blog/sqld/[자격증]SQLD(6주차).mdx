@@ -13,3 +13,176 @@ import InternalLink from '@/components/mdxComponents/InternalLink'
 
     - 상위 N번째 순위까지를 추출하는 쿼리
     - RANK, DENSE_RANK, ROW_NUMBER를 활용한다.
+    1.  **ROWNUM 함수**
+        - ROW_NUMBER와는 다른 함수이다. 현재 저장된 데이터를 그대로 두고 각 행에 순차적인 번호를 붙혀주는 함수.
+        - WHERE절에서 사용해서 상위 N개(행이 출력되는 상위 N개, 특정값의 내림차순으로 끊는게 아님)의 행을 제한할 때 사용.
+        - ```sql
+            SELECT NAME, SAL
+            FROM EMP -- 1. EMP테이블에서
+            WHERE ROWNUM <= 3 --2. 출력되는 순서에서 최상위 3명을 뽑는다.
+            ORDER BY SAL DESC; --3. 이후 뽑힌 3명을 SAL기준 내림차순 정리를 한다.
+          ```
+          - >이 경우 “SAL 상위 3명”이 아니라, “처음 3개의 행”만 가져와서 그 3개를 SAL DESC로 정렬하는 것이다.
+    2.  **윈도우함수의 순위함수**
+        - 윈도우 함수의 순위함수로는 RANK, DENSE_RANK, ROW_NUMBER가 있다. 이를 활용하여 TOP N쿼리를 작성할 수 있다.
+        - ```sql
+            SELECT *
+            FROM (
+            SELECT NAME, DEPT, SAL,
+                    --RANK, DENSE_RANK, ROW_NUMBER등으로 바꿔서 활용가능
+                    RANK() OVER (ORDER BY SAL DESC) AS RANKING
+            FROM EMP
+            )
+            WHERE RANKING <= 10;
+          ```
+          - >이 경우 SAL기준으로 내림차순 정리하고, 정리된 값에서 RANKING이 10이상인 값만 출력하는 TOP N 쿼리문이다.
+
+### 6. 계층형 질의와 셀프 조인
+
+    - 데이터의 계층 구조(ex> 본부 - 사업부 - 팀)과 같은 형태로 구성된 상황에 모델링을 트리와 같은 구조로 할 수 있게 되는데 이를 계층형 데이터 모델이라고 한다.
+    - 상위 노드에서 하위 노드로 연쇄적으로 데이터에 접근할 경우 계층형 질의 및 셀프 조인을 사용할 수 있다.
+      - 계층형 질의 (Hierarchical Query) : 한 테이블 내에서 부모-자식 관계를 트리 구조로 탐색하는 질의
+      - 셀프 조인 (Self Join) : 같은 테이블을 자기 자신과 조인해서 관계를 표현
+    1.  **계층형 조인**
+        - 한 테이블 내에서 부모-자식 관계를 트리 구조로 탐색하는 질의로써, 트리(Tree) 구조, 계층(depth)을 포함한 형태로 표현이 가능하다.
+        - 테이블안에서 상하 관계가 있을때, 즉 속성 1의 값이 속성2과 1:N의 관계를 가지고 있을때 그 관계를 계층형으로(Level로) 표현하는 기능
+        - 핵심 동작원리
+            - | 절          | 역할                                                                  |
+                |------------|---------------------------------------------------------------------|
+                | START WITH | 루트(시작점) 지정 — ex \) MGR이 NULL인 사장 KING부터 시작                                |
+                | CONNECT BY | 부모-자식 관계 지정 (PRIOR EMPNO = MGR ⇒ 상위 EMP의 번호가 하위 EMP의 MGR과 일치할 때 연결) |
+                | PRIOR      | 계층 방향을 나타냄 (부모→자식)                                                  |
+                | LEVEL      | 계층 단계 (1, 2, 3 …) 자동 계산됨                                            |
+        - 예시
+            - | EMPNO(직원넘버) | ENAME | MGR(상사의 직원넘버)  |
+                |-------|-------|------|
+                | 7839  | KING  | NULL |
+                | 7566  | JONES | 7839 |
+                | 7788  | SCOTT | 7566 |
+                | 7876  | ADAMS | 7788 |
+                - EMPNO → 직원 ID (부모 키 역할)
+                - MGR → 상사의 ID (자식이 부모를 가리킴)
+            - ```sql
+                SELECT LEVEL, EMPNO, ENAME, MGR
+                FROM EMP
+                START WITH MGR IS NULL          -- 루트: 사장
+                CONNECT BY PRIOR EMPNO = MGR;   -- 부모 EMPNO = 자식 MGR
+                ```
+            - | LEVEL(계층의 깊이를 표현) | EMPNO | ENAME  | MGR  |
+                |-------|-------|--------|------|
+                | 1     | 7839  | KING   | NULL |
+                | 2     | 7566  | JONES  | 7839 |
+                | 3     | 7788  | SCOTT  | 7566 |
+                | 4     | 7876  | ADAMS  | 7788 |
+                | 3     | 7902  | FORD   | 7566 |
+                | 4     | 7369  | SMITH  | 7902 |
+                | 2     | 7698  | BLAKE  | 7839 |
+                | 3     | 7499  | ALLEN  | 7698 |
+                | 3     | 7521  | WARD   | 7698 |
+                | 3     | 7654  | MARTIN | 7698 |
+                | 3     | 7844  | TURNER | 7698 |
+                | 3     | 7900  | JAMES  | 7698 |
+                | 2     | 7782  | CLARK  | 7839 |
+                | 3     | 7934  | MILLER | 7782 |
+            - ```sql
+                -- 결과물의 도식화
+                LEVEL 1: KING (사장)
+                    ├── LEVEL 2: JONES
+                    │       ├── LEVEL 3: SCOTT
+                    │       │       └── LEVEL 4: ADAMS
+                    │       └── LEVEL 3: FORD
+                    │               └── LEVEL 4: SMITH
+                    ├── LEVEL 2: BLAKE
+                    │       ├── ALLEN
+                    │       ├── WARD
+                    │       └── ...
+                    └── LEVEL 2: CLARK
+                            └── MILLER
+                ```
+            - 상사의 정보도 테이블로 표출하기
+                - ```sql
+                    SELECT LEVEL,
+                        EMPNO,
+                        ENAME,
+                        MGR,
+                        PRIOR ENAME AS MANAGER   -- 바로 위 상사의 이름
+                    FROM EMP
+                    START WITH MGR IS NULL          -- 루트: 사장
+                    CONNECT BY PRIOR EMPNO = MGR;   -- 부모 EMPNO = 자식 MGR
+                    ```
+                - | LEVEL(계층의 깊이 표현) | EMPNO | ENAME  | MGR  | MANAGER |
+                    |-------|-------|--------|------|---------|
+                    | 1     | 7839  | KING   | NULL | (NULL)  |
+                    | 2     | 7566  | JONES  | 7839 | KING    |
+                    | 3     | 7788  | SCOTT  | 7566 | JONES   |
+                    | 4     | 7876  | ADAMS  | 7788 | SCOTT   |
+                    | 3     | 7902  | FORD   | 7566 | JONES   |
+                    | 4     | 7369  | SMITH  | 7902 | FORD    |
+                    | 2     | 7698  | BLAKE  | 7839 | KING    |
+                    | 3     | 7499  | ALLEN  | 7698 | BLAKE   |
+                    | 3     | 7521  | WARD   | 7698 | BLAKE   |
+                    | 3     | 7844  | TURNER | 7698 | BLAKE   |
+                    | 3     | 7900  | JAMES  | 7698 | BLAKE   |
+                    | 3     | 7654  | MARTIN | 7698 | BLAKE   |
+                    | 2     | 7782  | CLARK  | 7839 | KING    |
+                    | 3     | 7934  | MILLER | 7782 | CLARK   |
+                - 📌 정리하자면
+                    - PRIOR 키워드는 “부모 행”을 가리키기 때문에,
+                    - PRIOR ENAME = 상사 이름
+                    - PRIOR EMPNO = 상사의 사번
+    2.  **셀프 조인**
+        - 같은 테이블 내에서 조인이 가능하도록 하는 쿼리
+        - 하나의 테이블을 두 번(또는 그 이상) 불러와서 서로 연결해 데이터를 조회하는 방식.
+        - 핵심 동작원리
+            - ```sql
+                -- 기본문법
+                SELECT A.컬럼, B.컬럼
+                FROM 테이블명1 A, 테이블명1 B
+                WHERE A.공통컬럼 = B.공통컬럼;
+                ```
+            - ```sql
+                -- 기본문법
+                SELECT A.컬럼, B.컬럼
+                FROM 테이블명1 A
+                JOIN 테이블명1 B
+                ON A.공통컬럼 = B.공통컬럼;
+                ```
+        - 예시
+            - ```sql
+                SELECT
+                    B.EMPNO,          -- 직원 번호
+                    B.ENAME,          -- 직원 이름
+                    A.ENAME AS BOSS,  -- 상사 이름
+                    A.EMPNO AS BOSSNUMBER -- 상사 사번
+                FROM EMP A, EMP B
+                WHERE A.EMPNO = B.MGR;  -- 상사 사번 = 직원의 MGR
+                ```
+            - ```sql
+                SELECT
+                    B.EMPNO,
+                    B.ENAME,
+                    A.ENAME AS BOSS,
+                    A.EMPNO AS BOSSNUMBER
+                FROM EMP B
+                JOIN EMP A
+                ON B.MGR = A.EMPNO;
+                ```
+            - | EMPNO | ENAME  | BOSS  | BOSSNUMBER |
+                |-------|--------|-------|------------|
+                | 7566  | JONES  | KING  | 7839       |
+                | 7698  | BLAKE  | KING  | 7839       |
+                | 7782  | CLARK  | KING  | 7839       |
+                | 7788  | SCOTT  | JONES | 7566       |
+                | 7902  | FORD   | JONES | 7566       |
+                | 7844  | TURNER | BLAKE | 7698       |
+                | 7900  | JAMES  | BLAKE | 7698       |
+                | 7876  | ADAMS  | SCOTT | 7788       |
+                | 7499  | ALLEN  | BLAKE | 7698       |
+                | 7521  | WARD   | BLAKE | 7698       |
+                | 7934  | MILLER | CLARK | 7782       |
+                | 7654  | MARTIN | BLAKE | 7698       |
+                | 7369  | SMITH  | FORD  | 7902       |
+
+### 6. PIVOT절과 UNPIVOT 절
+
+    - 데이터의 계층 구조(ex> 본부 - 사업부 - 팀)과 같은 형태로 구성된 상황에 모델링을 트리와 같은 구조로 할 수 있게 되는데 이를 계층형 데이터 모델이라고 한다.
