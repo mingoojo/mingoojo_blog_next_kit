@@ -31,9 +31,6 @@ export default function InternalLink({
   }
 
   const hre2 = `${baseUrl}${fileUrl[0].url}#${link}`
-  console.log(hre2)
-
-
 
   return (
     <a href={hre2} target="_blank" rel="noopener noreferrer">
