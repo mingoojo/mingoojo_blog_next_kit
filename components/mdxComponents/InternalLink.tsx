@@ -22,7 +22,7 @@ export default function InternalLink({
   }]
 
 
-  const fileUrl = files.filter((data) => data.name === file)[0].url
+  const fileUrl = files.filter((data) => data.name === file)
 
   // 혹시 해당 key가 없을 경우 대비
   if (!fileUrl || fileUrl.length !== 1) {
@@ -30,7 +30,7 @@ export default function InternalLink({
     return <span>Invalid links</span>
   }
 
-  const hre2 = `${baseUrl}${files.filter((data) => data.name === file)[0].url}#${link}`
+  const hre2 = `${baseUrl}${fileUrl[0].url}#${link}`
   console.log(hre2)
 
 
