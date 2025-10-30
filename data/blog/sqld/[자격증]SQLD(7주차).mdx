@@ -1,0 +1,127 @@
+---
+title: '[SQLD 자격증 공부] Chaper5 - 관리구문(WEEK 7)'
+date: '2025-10-19'
+tags: ['sqld', 'database', 'license']
+draft: false
+summary: SQLD 7주차 공부 내용을 정리.
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+import InternalLink from '@/components/mdxComponents/InternalLink'
+
+### 1. DML(Data Manipulation Language)
+
+    - 데이터 조작언어, 즉 데이터를 조작하는 작업을 수행허는 SQL 명령어이다.
+    - 이미 만들어져있는 테이블에 레코드를 추가하고, 변경하며, 삭제하는 등 테이블의 데이터를 변경하는 작업.
+    - INSERT, UPDATE, DELETE, MERGE문 등이 있다.
+    - DDL과 달리 자동커밋이 되지 않음. 명시적으로 커밋을 실행하기 전까지는 되돌릴수 있다.
+
+    1. **INSERT**
+      - 테이블에 레코드를 추가하는 명령어
+      - 기본문법
+        - ```sql
+            INSERT INTO 테이블명 (컬럼1, 컬럼2, 컬럼3)
+            VALUES (값1, 값2, 값3);
+            ```
+            - 칼럼1에 값1 값이 1대1로 매칭되어 테이블에 레코드가 생성된다.
+            - 입력되지 않는 칼럼은 null값이 입력되고, not null인 경우 오류가 발생한다.
+            - auto generate가 설정된 칼럼은 따로 건들지 않아도 알아서 값을 입력한다.
+      - 모든 칼럼 값을 입력할때
+        - ```sql
+            INSERT INTO 테이블명
+            VALUES (값1, 값2, 값3);
+            ```
+            - 입력되는 values가 모든 행을 충족할때 따로 칼럼명을 적지 않아도 된다.(보수적으로 하고싶을때는 적는걸 추천!)
+      - 여러행 한번에 추가
+        - ```sql
+            INSERT INTO test (id, name, age)
+            VALUES
+                (3, 'Minho', 25),
+                (4, 'Yuna', 29),
+                (5, 'Hana', 33);
+            ```
+            - 입력되는 values가 모든 행을 충족할때 따로 칼럼명을 적지 않아도 된다.
+    2. **UPDATE**
+      - 기존의 레코드를 수정하는 명령어.
+      - WHERE절을 통해 수정하고가 하는 레코드를 특정하여 지정해야함.
+      - 기본문법
+        - ```sql
+            UPDATE 테이블명
+            SET 컬럼1 = 값1, 컬럼2 = 값2
+            WHERE 조건;
+            ```
+            - 조건을 지정하지 않으면 모든 행이 수정되므로 주의해야 한다.
+            - SET 뒤에는 콤마(,)로 구분하여 여러 컬럼을 동시에 수정할 수 있다.
+      - 예시
+        - ```sql
+            UPDATE student
+            SET age = 26, major = 'Computer Science'
+            WHERE id = 3;
+            ```
+            - id가 3인 학생의 나이와 전공을 변경한다.
+      - 전체 데이터 수정 (조건 미지정)
+        - ```sql
+            UPDATE student
+            SET grade = 'A';
+            ```
+            - 모든 학생의 grade 컬럼을 'A'로 변경한다. (⚠️실무에서는 거의 사용하지 않는다.)
+    3. **DELETE**
+      - 기존의 레코드를 삭제하는 명령어.
+      - 특정 레코드를 명시하지 않으면 모든 레코드가 삭제된다.
+      - 기본문법
+        - ```sql
+            DELETE FROM 테이블명
+            WHERE 조건;
+            ```
+            - WHERE 절을 생략하면 모든 행이 삭제되므로 주의가 필요하다.
+      - 예시
+        - ```sql
+            DELETE FROM student
+            WHERE id = 4;
+
+            ```
+            - id가 4인 학생의 정보를 삭제한다.
+      - 모든 행 삭제
+        - ```sql
+            DELETE FROM student;
+            ```
+            - 전체 데이터가 삭제되지만, 테이블 구조는 유지된다.
+            - TRUNCATE TABLE student;는 더 빠르게 전체 삭제하지만 ROLLBACK 불가능하다.
+    4. **MERGE**
+      - 두 테이블 간 데이터를 비교하여 조건에 따라 INSERT / UPDATE / DELETE를 한 번에 수행하는 명령어
+      - 주로 데이터 동기화 또는 업서트(Upsert) 기능을 구현할 때 사용된다.
+      - 기본문법
+        - ```sql
+            MERGE INTO 타겟테이블 AS T -- T: 데이터를 "받는" 테이블 (즉, 수정/추가 대상)
+            USING 소스테이블 AS S -- S: 데이터를 "참조하는" 테이블 (즉, 기준 데이터 제공)
+            ON (T.기준컬럼 = S.기준컬럼) -- 두 테이블을 비교할 조건 (JOIN 조건처럼 동작)
+            WHEN MATCHED THEN -- 조건이 맞을때
+                UPDATE SET T.컬럼1 = S.컬럼1, T.컬럼2 = S.컬럼2 -- 기존 데이터를 수정(UPDATE)
+            WHEN NOT MATCHED THEN -- 조건이 안맞을때
+                INSERT (컬럼1, 컬럼2, 컬럼3)
+                VALUES (S.컬럼1, S.컬럼2, S.컬럼3); -- 새로운 데이터를 추가(INSERT)
+            ```
+            - WHEN MATCHED : 두 테이블의 기준 컬럼이 일치할 때(=존재할 때) → UPDATE 수행
+            - WHEN NOT MATCHED : 존재하지 않을 때 → INSERT 수행
+      - 예시
+        - ```sql
+            MERGE INTO student AS T
+            USING new_student AS S
+            ON (T.id = S.id)
+            WHEN MATCHED THEN
+                UPDATE SET T.name = S.name, T.age = S.age
+            WHEN NOT MATCHED THEN
+                INSERT (id, name, age)
+                VALUES (S.id, S.name, S.age);
+
+            ```
+            - student 테이블에 new_student 데이터를 비교하여,
+               - id가 이미 존재하면 UPDATE
+               - 존재하지 않으면 INSERT
+
+### 1. TCL(Transaction Control Language)
+
+    - <InternalLink link="트랜잭션transaction" name="트랜잭션" file="sqld"/> 제어언어, 트랜잭션을 제어하는 SQL명령어이다.
+    - 이미 만들어져있는 테이블에 레코드를 추가하고, 변경하며, 삭제하는 등 테이블의 데이터를 변경하는 작업.
+    - INSERT, UPDATE, DELETE, MERGE문 등이 있다.
+    - DDL과 달리 자동커밋이 되지 않음. 명시적으로 커밋을 실행하기 전까지는 되돌릴수 있다.
