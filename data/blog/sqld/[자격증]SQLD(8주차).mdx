@@ -129,7 +129,7 @@ import InternalLink from '@/components/mdxComponents/InternalLink'
 
     3. **문제 3번**
       - ```
-        03. 속성에 대한 아래의 설명에서 빈칸에 들어갈 것으로 올바른 것은?
+        03. 속성에 대한 아래의 설명에서 빈칸에 들어갈 것으로 올바른 것은? [ 답 : 1 ]
 
             (ㄱ) _____ 은(는) 엔터티를 식별할 수 있는 속성이며,
             (ㄴ) _____ 은(는) 다른 엔터티의 관계에 포함되는 속성이다.
@@ -213,12 +213,100 @@ import InternalLink from '@/components/mdxComponents/InternalLink'
         ```
 
       - ```
-        06. 다음 주어진 그림에 해당하는 ERD 표기법으로 알맞은 것은?
+        06. 다음 주어진 그림에 해당하는 ERD 표기법으로 알맞은 것은? [ 답 : 2 ]
 
-            ① Barker
-            ② IE
-            ③ UML
-            ④ IDEF1X
+          ① Barker
+          ② IE
+          ③ UML
+          ④ IDEF1X
         ```
+      - 설명
+        - ERD 표기법
+
+          <ImageWithCaption
+
+              src="/static/images/ERD_table.png"
+              alt="ERD Table"
+              caption="ERD 관계 표기법"
+
+          />
+
+                    <ImageWithCaption
+
+              src="/static/images/erd_ comparison.png"
+              alt="ERD Comprison Table"
+              caption="ERD 비교표"
+
+          />
 
 ---
+
+    7. **문제 9번**
+      - ```mermaid
+             erDiagram
+            GROUP {
+                int GroupID PK
+                string GroupName
+                string Authority
+                string Description
+            }
+            ACCOUNT {
+                int UserID PK
+                string Password
+                string MobilePhone
+                string PostCode
+                string HomeAddress
+                int GroupID FK
+            }
+
+            GROUP ||--o{ ACCOUNT : "1:N"
+        ```
+      - ```sql
+          다음 주어진 ERD 관계에 대한 설명으로 옳은 것은? [ 답 : 2]
+
+            ① 하나의 UserID는 여러 개의 GroupID를 가질 수 없다.
+            ② GROUP 릴레이션과 ACCOUNT 릴레이션은 식별관계를 가진다.
+            ③ GROUP 릴레이션은 한 명의 UserID도 없을 수 있다.
+            ④ GROUP 릴레이션은 여러 명의 UserID를 가질 수 있다.
+        ```
+      - 설명
+        - 식별관계
+          - 부모 엔터티의 기본키가 자식 엔터티의 기본키로 포함되는 관계
+
+---
+
+    8. **문제 12번**
+      - ```sql
+        다음 테이블에 대한 INSERT 구문 수행 시 에러가 발생하지 않는 것은? [ 답 : 3 ]
+
+        CREATE TABLE T1 (
+          C1 NUMBER PRIMARY KEY,
+          C2 NUMBER NOT NULL,
+          C3 NUMBER UNIQUE,
+          C4 NUMBER CHECK (C4 IS NOT NULL)
+        );
+
+          ① INSERT INTO T1 VALUES(NULL, 1, 2, 3);
+          ② INSERT INTO T1 VALUES(1, NULL, 2, 3);
+          ③ INSERT INTO T1 VALUES(1, 2, NULL, 3);
+          ④ INSERT INTO T1 VALUES(1, 2, 3, NULL);
+        ```
+      - 설명
+        - 제약조건 확인
+          - | 컬럼     | 제약조건                   | NULL 허용 여부 | 설명                               |
+            | ------ | ---------------------- | ---------- | -------------------------------- |
+            | **C1** | PRIMARY KEY            | ❌          | 기본키는 `NOT NULL` + `UNIQUE` 조건 포함 |
+            | **C2** | NOT NULL               | ❌          | NULL 불가                          |
+            | **C3** | UNIQUE                 | ✅          | NULL 가능 (UNIQUE는 NULL 허용)        |
+            | **C4** | CHECK (C4 IS NOT NULL) | ❌          | NULL 불가                          |
+        - 구문해석
+          - ```sql
+            C4 NUMBER CHECK (C4 IS NOT NULL)
+            ```
+          - C4는 숫자이고, CHECK의 조건을 충족해야한다.
+          - **CHECK (조건식)** : 조건식을 만족해야함.
+              - | 구문 ( 예시 )                                      | 의미                     |
+                | --------------------------------------- | ---------------------- |
+                | `CHECK (age > 0)`                       | 나이는 0보다 커야 함           |
+                | `CHECK (gender IN ('M', 'F'))`          | gender는 'M' 또는 'F'만 가능 |
+                | `CHECK (salary BETWEEN 1000 AND 10000)` | 급여는 1000~10000 사이여야 함  |
