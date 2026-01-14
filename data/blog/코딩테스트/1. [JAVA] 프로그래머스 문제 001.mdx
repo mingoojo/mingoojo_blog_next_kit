@@ -1,0 +1,215 @@
+---
+title: '[JAVA] 프로그래머스 문제 001'
+date: '2025-12-14'
+tags: ['dev', 'coding test']
+draft: false
+summary: 코딩문제로 코딩 실력 기르기 > 프로그래머스 문제풀이
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+[프로그래머스 문제 - 001](https://school.programmers.co.kr/learn/courses/30/lessons/181943)
+
+### 1. 문자열 겹쳐쓰기
+
+1.  **문제설명**
+    - 문자열 `my_string`, `overwrite_string`과 정수 s가 주어집니다. 문자열 `my_string`의 인덱스 `s`부터 `overwrite_string`의 길이만큼을 문자열 `overwrite_string`으로 바꾼 문자열을 return 하는 solution 함수를 작성해 주세요.
+
+2.  **제한사항**
+    - `my_string`와 `overwrite_string`은 숫자와 알파벳으로 이루어져 있습니다.
+    - 1 ≤ `overwrite_string`의 길이 ≤ `my_string`의 길이 ≤ 1,000
+    - 0 ≤ s ≤ `my_string`의 길이 - `overwrite_string`의 길이
+
+3.  **입출력 예시**
+    - | **my_string**  | **overwrite_string** | **s** | **result**       |
+      | -------------- | -------------------- | ----- | ---------------- |
+      | He11oWor1d     | lloWorl              | 2     | `HelloWorld`     |
+      | Program29b8UYP | merS123              | 7     | `ProgrammerS123` |
+
+4.  **풀이**
+
+    ```java
+      // 입력값이 my_string = He11oWor1d / overwrite_string = lloWorl / s = 2일때
+      class Solution {
+         public String solution(String my_string, String overwrite_string, int s) {
+            char[] chars = my_string.toCharArray(); // chars = {H, e, 1, 1, o, W, o, r, 1, d}
+            char[] chars2 = overwrite_string.toCharArray(); // chars2 = {l, l, o, W, o, r, l}
+
+
+            for (var i = 0; i < chars2.length; i++) {
+                  chars[i + s] = chars2[i];
+                  //i는 0 ~ 6까지임
+                  //chars[i + 2] = chars2[i]
+                  //chars[2] = chars2[0] = l
+                  //chars[3] = chars2[1] = l
+                  //chars[4] = chars2[2] = o
+                  //chars[5] = chars2[3] = W
+                  //chars[6] = chars2[4] = o
+                  //chars[7] = chars2[5] = r
+                  //chars[8] = chars2[6] = l
+
+            }
+
+            String answer = new String(chars); // chars = {H, e, l, l, o, W, o, r, l, d};
+
+            return answer; // answer = HelloWorld;
+         }
+      }
+    ```
+
+    - 풀이 해설
+      1. `my_string`(chars) / `overwrite_string`(chars2)을 문자열로 변환
+      2. chars2의 길이만큼 반복문을 돌며 chars의 [chars2 순번 + `s`]의 값을 chars[chars2의 순번]값으로 변경
+      3. 만들어진 chars를 다시 String으로 변환
+
+5.  **다른사람 풀이**
+
+    ```java
+      // 입력값이 my_string = He11oWor1d / overwrite_string = lloWorl / s = 2일때
+      class Solution {
+         public String solution(String my_string, String overwrite_string, int s) {
+            String before = my_string.substring(0, s); // before = my_string.substring(0, 2); = He
+            String after = my_string.substring(s + overwrite_string.length()); // before = my_string.substring(9); = d
+            return before + overwrite_string + after; // He + lloWorl + d
+         }
+      }
+    ```
+
+    - 풀이 해설
+      1. `String before = my_string.substring(0, s);`를 통해 `my_string`의 0번째부터 `s`번째까지 값을 잘라서 before라는 함수값에 저장한다.
+      2. `String after = my_string.substring(s + overwrite_string.length());`를 통해 `my_string`의 0번째부터 `s + overwrite_string.length()`번째 이후의 값을 잘라서 after라는 함수값에 저장한다.
+      3. before와 overwrite_string와 after를 하나의 String으로 합쳐서 결과 값 반환
+
+### 2. 문제풀이에 필요한 JAVA 문법
+
+1.  문자함수
+    1.  자르기 및 추출
+        #### substring() [현재 풀이에 사용]
+            ```java
+               String str = "HelloWorld"
+               str.substring(5); // World
+               str.substring(0, 5); // Hello
+            ```
+                - subString(beginIndex) : beginIndex부터 끝까지의 값 (**beginIndex포함**)
+                - subString(beginIndex, endIndex) : beginIndex부터 endIndex전까지의 값 (**beginIndex포함, endIndex포함 안함**)
+        #### charAt()
+            ```java
+               String str = "HelloWorld"
+               str.charAt(5); // W
+               str.charAt(0); // H
+            ```
+                - charAt(index) : index에 해당하는 문자 1개 반환
+                - return타입 : char
+    2.  문자열 길이 비교
+
+        #### length()
+
+            ```java
+               String str = "HelloWorld"
+               str.lenght(); // 10
+            ```
+                - 문자열의 길이를 반환
+                - 배열은 length, 문자열은 length()
+
+        #### equals() / equalsIgnoreCase()
+
+            ```java
+               "abc".equals("abc") // true
+               "abc".equals("ABC") // false
+               "abc".equalsIgnoreCase("ABC") //true
+            ```
+                - 문자열의 비교는 `==`를 쓰지말고 equals()를 사용
+                - equalsIgnoreCase()는 대소문자 구분 안함
+
+    3.  문자열 검색
+        #### indexOf()
+            ```java
+               String str = "HelloWorld"
+               str.indexOf("l"); // 2
+               str.indexOf("l", 2); // 3 (l의 두번째 위치 반환)
+               str.indexOf("z"); // -1
+            ```
+                - 처음 등장 위치 반환
+                - 없으면 -1 반환
+        #### lastIndexOf()
+            ```java
+               String str = "HelloWorld"
+               str.lastIndexOf("l"); // 8
+               str.lastIndexOf("z"); // -1
+            ```
+                - 마지막위치 반환
+                - 없으면 -1 반환
+        #### contains()
+            ```java
+               String str = "HelloWorld"
+               str.contains("l"); // true
+            ```
+                - 포함 여부만 판단
+                - return 값 boolean
+    4.  문자열 변환
+
+        #### toUpperCase() / toLowerCase()
+
+            ```java
+               "AbC".toLowerCase(); // "abc"
+               "AbC".toUpperCase(); // "ABC"
+            ```
+             - 처음 등장 위치 반환
+             - 없으면 -1 반환
+
+        #### replace() / replaceAll()
+
+            ```java
+               "hello".replace("l", "x"); // "hexxo"
+               "010-1234-5678".replace("-", ""); // 01012345678
+               "010-1234-5678".replaceAll("[0-9]", "*"); // ***-****-****
+            ```
+             - 모든 첫번째 변수값을 두번쨰 변수값으로 치환
+             - replaceAll은 정규식을 사용
+
+        #### trim() / strip()
+
+            ```java
+               "  hello  ".trim(); // "hello"
+               "  hello world  ".strip(); // "hello world"
+            ```
+             -	앞뒤 공백 제거
+             -	비교
+                  | **구분**  | **trim()** | **strip()** |
+                  | ------- | -------- | --------- |
+                  | 유니코드 공백 | ❌        | ⭕         |
+                  | 기준      | ASCII    | Unicode   |
+                  | Java 버전 | 1.0      | 11+       |
+
+    5.  문자열 분리 및 결합
+        #### split()
+            ```java
+               String[] arr = "A,b,C".split(","); // {A, B, C}
+            ```
+             - 리턴 타입: String[]
+        #### join()
+            ```java
+               String fruits = String.join(" ", "Orange", "Apple", "Mango");
+               System.out.println(fruits); // Orange Apple Mango
+            ```
+             - 리턴 타입: String
+             - 2번째부터 마지막 인수를 하나의 String으로 만드는데 그 사이사이 첫번째 인수를 넣는다.
+        #### concat()
+            ```java
+               "Hello".concat("World"); // "HelloWorld"
+            ```
+             - 실무에서는 + 연산자를 더 많이 씀
+    6.  문자열 판별
+        #### isEmpty() / isBlank()
+            ```java
+               "".isEmpty();        // true
+               " ".isEmpty();       // false
+               " ".isBlank();       // true
+            ```
+             - isEmpty() → 길이 0
+             - isBlank() → 공백만 있어도 true
+        #### startsWith() / endsWith()
+            ```java
+               "hello.txt".endsWith(".txt"); // true
+               "hello.txt".startsWith("he"); // true
+            ```

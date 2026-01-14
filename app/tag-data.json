@@ -1,6 +1,7 @@
 {
-  "dev": 7,
-  "license": 16,
+  "dev": 10,
+  "license": 18,
+  "coding-test": 1,
   "sqld": 10,
   "database": 11,
   "spring": 5,
