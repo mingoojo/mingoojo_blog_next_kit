@@ -1,0 +1,1002 @@
+---
+title: '[정보처리기사 자격증] 3.데이터베이스 구축 > 3장 SQL 운용 (WEEK 6)'
+date: '2026-01-20'
+tags: ['dev', 'license']
+draft: false
+summary: 정보처리기사 6주차 내용정리 - SQL 운용
+# https://velog.io/@alpaka206/79.-SQL의-개념
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+### 1. SQL (Structured Query Language)의 개념
+
+1. **SQL이란?**
+
+   > **한 줄 정의:** 관계형 데이터베이스(RDB)를 위한 **국제 표준 데이터베이스 언어**
+
+2. **SQL 핵심 개념**
+   | 항목 | 내용 |
+   | ---- | ------------------------------------------ |
+   | 유래 | 1974년 IBM **SEQUEL**에서 유래 |
+   | 기반 | **관계대수 + 관계해석** (혼합 데이터 언어) |
+   | 기능 | 정의 + 조작 + 제어 **모두** 가능 |
+
+3. **SQL 분류 3가지**
+   | 종류 | 한 줄 정의 | 명령어 |
+   | :-----: | ----------------- | ------------------------------- |
+   | **DDL** | 데이터 **정의**어 | CREATE, ALTER, DROP |
+   | **DML** | 데이터 **조작**어 | SELECT, INSERT, DELETE, UPDATE |
+   | **DCL** | 데이터 **제어**어 | COMMIT, ROLLBACK, GRANT, REVOKE |
+   1. DDL (Data Definition Language)
+      - 데이터 구조를 **정의/변경/삭제**하는 언어
+      - 대상
+        - SCHEMA, DOMAIN, TABLE, VIEW, INDEX
+      - 사용자
+        - **DBA** (데이터베이스 관리자)
+        - **DB 설계자**
+      - 명령어 3가지
+        | 명령어 | 한 줄 정의 |
+        | :--------: | ----------------------- |
+        | **CREATE** | 구조 **생성** (정의) |
+        | **ALTER** | 구조 **변경** (TABLE만) |
+        | **DROP** | 구조 **삭제** |
+
+      💡 **ALTER는 TABLE만** 변경 가능!
+
+   2. DML (Data Manipulation Language)
+      - 저장된 데이터를 **실질적으로 처리**하는 언어
+      - 역할
+        - 사용자와 DBMS 간 **인터페이스** 제공
+      - 명령어 4가지
+        | 명령어 | 한 줄 정의 | 기능 |
+        | :--------: | ---------------------- | ------ |
+        | **SELECT** | 데이터 **검색** (조회) | Read |
+        | **INSERT** | 데이터 **삽입** | Create |
+        | **DELETE** | 데이터 **삭제** | Delete |
+        | **UPDATE** | 데이터 **변경** (수정) | Update |
+
+        💡 **CRUD** = Create(INSERT), Read(SELECT), Update(UPDATE), Delete(DELETE)
+
+   3. DCL (Data Control Language)
+      - 데이터의 **보안, 무결성, 회복, 병행제어**를 정의하는 언어
+      - 사용자
+        - **DBA** (데이터 관리 목적)
+      - 명령어 4가지
+        | 명령어 | 한 줄 정의 |
+        | :----------: | ----------------------------------- |
+        | **COMMIT** | 작업 결과를 **확정** (저장) |
+        | **ROLLBACK** | 비정상 종료 시 **원래 상태로 복구** |
+        | **GRANT** | 사용 권한 **부여** |
+        | **REVOKE** | 사용 권한 **취소** (회수) |
+
+4. **DDL vs DML vs DCL 비교**
+
+   |    구분    |         DDL         |              DML               |               DCL               |
+   | :--------: | :-----------------: | :----------------------------: | :-----------------------------: |
+   |  **목적**  |      구조 정의      |          데이터 처리           |            보안/제어            |
+   |  **대상**  |   테이블 등 구조    |          데이터(튜플)          |          권한/트랜잭션          |
+   | **명령어** | CREATE, ALTER, DROP | SELECT, INSERT, DELETE, UPDATE | COMMIT, ROLLBACK, GRANT, REVOKE |
+
+---
+
+### 2. DDL(Data Definition Language)
+
+1. **DDL이란?**
+
+   > **한 줄 정의:** DB 구조를 **정의/수정/삭제**하는 언어 (결과는 **데이터 사전**에 저장)
+
+2. DDL 명령어 종류
+   | 명령어 | 한 줄 정의 |
+   | :--------: | ----------------------- |
+   | **CREATE** | 구조 **생성** |
+   | **ALTER** | 구조 **변경** (TABLE만) |
+   | **DROP** | 구조 **삭제** |
+
+3. **CREATE SCHEMA**
+   - **스키마**를 정의하는 명령문
+
+     ```sql
+     CREATE SCHEMA 스키마명 AUTHORIZATION 사용자_id;
+     ```
+
+   - 예제
+
+     ```sql
+     CREATE SCHEMA 대학교 AUTHORIZATION 홍길동;
+     ```
+
+4. **CREATE DOMAIN**
+   - 속성이 가질 수 있는 **값의 범위(도메인)**를 정의
+
+     ```sql
+     CREATE DOMAIN 도메인명 AS 데이터_타입
+     [DEFAULT 기본값]
+     [CONSTRAINT 제약조건명 CHECK (범위값)];
+     ```
+
+   - 예제 : 성별 도메인 (남/여만 허용)
+
+     ```sql
+     CREATE DOMAIN SEX CHAR(1)
+     DEFAULT '남'
+     CONSTRAINT VALID-SEX CHECK(VALUE IN('남','여'));
+     ```
+
+5. **CREATE TABLE**
+   - **테이블**을 정의하는 명령문
+
+     ```sql
+      CREATE TABLE 테이블명 (
+      속성명 데이터타입 [DEFAULT 기본값] [NOT NULL],
+      [PRIMARY KEY(속성명)],
+      [UNIQUE(속성명)],
+      [FOREIGN KEY(속성명) REFERENCES 참조테이블(속성명)]
+         [ON DELETE 옵션]
+         [ON UPDATE 옵션],
+      [CONSTRAINT 제약조건명 CHECK(조건식)]
+      );
+     ```
+
+   - 주요 키워드
+     | 키워드 | 한 줄 정의 |
+     | --------------- | ------------------ |
+     | **PRIMARY KEY** | 기본키 지정 |
+     | **UNIQUE** | 대체키 (중복 불가) |
+     | **FOREIGN KEY** | 외래키 지정 |
+     | **NOT NULL** | NULL 값 불가 |
+     | **CHECK** | 조건 제약 |
+   - ON DELETE / ON UPDATE 옵션 (시험 필수!)
+
+     | 옵션            | 한 줄 정의                      |
+     | --------------- | ------------------------------- |
+     | **NO ACTION**   | 아무 조치 안 함                 |
+     | **CASCADE**     | 관련 튜플도 **함께 삭제/변경**  |
+     | **SET NULL**    | 관련 튜플을 **NULL**로 변경     |
+     | **SET DEFAULT** | 관련 튜플을 **기본값**으로 변경 |
+
+   - 예제
+
+     ```sql
+     CREATE TABLE 학생 (
+     이름 VARCHAR(15) NOT NULL,
+     학번 CHAR(8),
+     전공 CHAR(5),
+     성별 SEX,
+     생년월일 DATE,
+     PRIMARY KEY(학번),
+     FOREIGN KEY(전공) REFERENCES 학과(학과코드)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+     CONSTRAINT 생년월일제약
+        CHECK(생년월일 >= '1980-01-01')
+     );
+     ```
+
+6. **다른 테이블로 테이블 생성**
+
+   ```sql
+   CREATE TABLE 신규테이블 AS SELECT 속성명 FROM 기존테이블;
+   ```
+
+   💡 **주의:** 제약조건은 복사 안 됨! → ALTER로 추가 필요
+
+7. **CREATE VIEW**
+   - **뷰(가상 테이블)**를 정의하는 명령문
+
+     ```sql
+     CREATE VIEW 뷰명 [(속성명, ...)]
+     AS SELECT문;
+     ```
+
+   💡 **주의:** SELECT문에 **UNION, ORDER BY 사용 불가!**
+   - 예제
+     ```sql
+     CREATE VIEW 안산고객(성명, 전화번호)
+     AS SELECT 성명, 전화번호
+        FROM 고객
+        WHERE 주소 = '안산시';
+     ```
+
+8. **CREATE INDEX**
+   - **인덱스**를 정의하는 명령문
+
+     ```sql
+     CREATE [UNIQUE] INDEX 인덱스명
+     ON 테이블명(속성명 [ASC | DESC])
+     [CLUSTER];
+     ```
+
+     | 옵션        | 한 줄 정의               |
+     | ----------- | ------------------------ |
+     | **UNIQUE**  | 중복값 없는 인덱스       |
+     | **ASC**     | 오름차순 (기본값)        |
+     | **DESC**    | 내림차순                 |
+     | **CLUSTER** | 클러스터드 인덱스로 설정 |
+
+   - 예제
+
+     ```sql
+     CREATE UNIQUE INDEX 고객번호_idx
+     ON 고객(고객번호 DESC);
+     ```
+
+9. **ALTER TABLE**
+   - 테이블 정의를 **변경**하는 명령문
+
+     | 명령            | 기능            | 문법                                          |
+     | --------------- | --------------- | --------------------------------------------- |
+     | **ADD**         | 속성 **추가**   | ALTER TABLE 테이블 ADD 속성 타입;             |
+     | **ALTER**       | 기본값 **변경** | ALTER TABLE 테이블 ALTER 속성 SET DEFAULT 값; |
+     | **DROP COLUMN** | 속성 **삭제**   | ALTER TABLE 테이블 DROP COLUMN 속성;          |
+
+   - 예제
+
+     ```sql
+     -- 속성 추가
+     ALTER TABLE 학생 ADD 학년 VARCHAR(3);
+
+     -- 속성 변경
+     ALTER TABLE 학생 ALTER 학번 VARCHAR(10) NOT NULL;
+     ```
+
+10. **DROP**
+    - 구조를 **삭제**하는 명령문
+
+      ```sql
+      DROP SCHEMA 스키마명 [CASCADE | RESTRICT];
+      DROP DOMAIN 도메인명 [CASCADE | RESTRICT];
+      DROP TABLE 테이블명 [CASCADE | RESTRICT];
+      DROP VIEW 뷰명 [CASCADE | RESTRICT];
+      DROP INDEX 인덱스명 [CASCADE | RESTRICT];
+      DROP CONSTRAINT 제약조건명;
+      ```
+
+11. **CASCADE vs RESTRICT**
+    | 옵션 | 한 줄 정의 |
+    | :----------: | -------------------------------- |
+    | **CASCADE** | 참조하는 모든 개체 **함께 삭제** |
+    | **RESTRICT** | 참조 중이면 **삭제 취소** |
+    - 예제
+
+      ```sql
+      DROP TABLE 학생 CASCADE;
+      ```
+
+12. **SQL 데이터 타입**
+
+    | 타입        | 설명          |
+    | ----------- | ------------- |
+    | INTEGER     | 4바이트 정수  |
+    | SMALLINT    | 2바이트 정수  |
+    | FLOAT, REAL | 실수          |
+    | CHAR(n)     | 고정길이 문자 |
+    | VARCHAR(n)  | 가변길이 문자 |
+    | DATE        | 날짜          |
+    | TIME        | 시간          |
+
+### 3. DCL(Data Control Language)
+
+1. **DCL이란?**
+   > **한 줄 정의:** 데이터의 **보안, 무결성, 회복, 병행 제어**를 정의하는 언어
+2. **DCL 핵심 개념**
+   | 항목 | 내용 |
+   | ------ | ------------------------------------------ |
+   | 사용자 | **DBA** (데이터베이스 관리자) |
+   | 목적 | 데이터 **관리** |
+   | 명령어 | GRANT, REVOKE, COMMIT, ROLLBACK, SAVEPOINT |
+
+3. **DCL 명령어 5가지**
+   | 명령어 | 한 줄 정의 |
+   | :-----------: | --------------------------- |
+   | **GRANT** | 권한 **부여** |
+   | **REVOKE** | 권한 **취소** |
+   | **COMMIT** | 변경 내용 **확정** (저장) |
+   | **ROLLBACK** | 변경 내용 **취소** (복구) |
+   | **SAVEPOINT** | ROLLBACK 할 **저장점** 지정 |
+   1. GRANT (권한 부여)
+      - 사용자에게 권한을 **부여**하는 명령어
+      - 사용자 등급 부여
+
+        ```sql
+        GRANT 사용자등급 TO 사용자ID [IDENTIFIED BY 암호];
+        ```
+
+        | 등급         | 권한                                 |
+        | ------------ | ------------------------------------ |
+        | **CONNECT**  | 데이터베이스 **접속** 권한           |
+        | **RESOURCE** | 데이터베이스 및 테이블 **생성** 권한 |
+        | **DBA**      | 데이터베이스 **관리자** 권한         |
+
+      - 테이블 권한 부여
+
+        ```sql
+        GRANT 권한_리스트 ON 개체 TO 사용자 [WITH GRANT OPTION];
+        ```
+
+        | 옵션                  | 한 줄 정의                                              |
+        | --------------------- | ------------------------------------------------------- |
+        | **WITH GRANT OPTION** | 부여받은 권한을 **다른 사용자에게 부여**할 수 있는 권한 |
+
+      - 예제
+
+        ```sql
+        -- 모든 권한 + 권한 부여 권한까지
+        GRANT ALL ON 고객 TO NABI WITH GRANT OPTION;
+        ```
+
+   2. REVOKE (권한 취소)
+      - 사용자의 권한을 **취소**하는 명령어
+      - 사용자 등급 취소
+        ```sql
+        REVOKE 사용자등급 FROM 사용자ID;
+        ```
+      - 테이블 권한 취소
+
+        ```sql
+        REVOKE [GRANT OPTION FOR] 권한_리스트 ON 개체 FROM 사용자 [CASCADE];
+        ```
+
+        | 옵션                 | 한 줄 정의                                          |
+        | -------------------- | --------------------------------------------------- |
+        | **GRANT OPTION FOR** | 다른 사용자에게 권한 부여할 수 있는 **권한만** 취소 |
+        | **CASCADE**          | 연쇄적으로 권한 취소 (A→B→C 면 C도 취소)            |
+
+      - 예제
+
+        ```sql
+        -- UPDATE 권한을 부여할 수 있는 권한만 취소
+        REVOKE GRANT OPTION FOR UPDATE ON 고객 FROM STAR;
+        ```
+
+   3. COMMIT (확정)
+      - 변경된 모든 내용을 DB에 **반영(확정)**하는 명령어
+      - 트랜잭션이 **성공적으로 완료**되면 사용
+      - COMMIT 후에는 **ROLLBACK 불가**
+      - **Auto Commit** 기능 설정 가능
+
+      ```sql
+      COMMIT;
+      ```
+
+   4. ROLLBACK (취소)
+      - COMMIT 전의 변경 내용을 **취소**하고 이전 상태로 복구
+      - 트랜잭션이 **비정상 종료** 시 사용
+      - **비일관성** 방지
+
+      ```sql
+      ROLLBACK;
+      ```
+
+   5. SAVEPOINT (저장점)
+      - 트랜잭션 내에서 **ROLLBACK 할 위치**를 지정
+
+      ```sql
+      SAVEPOINT 저장점명;
+      ROLLBACK TO 저장점명;
+      ```
+
+      - SAVEPOINT 예제 (시험 필수!)
+        1. 초기 상태
+
+           | 사원번호 | 이름   | 부서   |
+           | :------: | ------ | ------ |
+           |    10    | 김기획 | 기획부 |
+           |    20    | 박인사 | 인사부 |
+           |    30    | 최재무 | 재무부 |
+           |    40    | 오영업 | 영업부 |
+
+        2. 작업 흐름
+
+        ```sql
+        -- 1. 40번 삭제 후 COMMIT (확정!)
+        DELETE FROM 사원 WHERE 사원번호 = 40;
+        COMMIT;  -- ← 여기까지 확정! ROLLBACK 불가
+
+        -- 2. 30번 삭제 (COMMIT 안 함)
+        DELETE FROM 사원 WHERE 사원번호 = 30;
+
+        -- 3. 저장점 S1 설정 후 20번 삭제
+        SAVEPOINT S1;
+        DELETE FROM 사원 WHERE 사원번호 = 20;
+
+        -- 4. 저장점 S2 설정 후 10번 삭제
+        SAVEPOINT S2;
+        DELETE FROM 사원 WHERE 사원번호 = 10;
+
+        -- 5. S2까지 ROLLBACK → 10번 복구
+        ROLLBACK TO S2;  -- 결과: 10번만 복구
+
+        -- 6. S1까지 ROLLBACK → 20번도 복구
+        ROLLBACK TO S1;  -- 결과: 10, 20번 복구
+
+        -- 7. ROLLBACK (저장점 없이) → COMMIT 이후로 복구
+        ROLLBACK;  -- 결과: 10, 20, 30번 복구 (40번은 COMMIT됨)
+        ```
+      6. COMMIT vs ROLLBACK
+         | 구분 | COMMIT | ROLLBACK |
+         | :--: | :-----------: | :-------------: |
+         | 의미 | 확정 (저장) | 취소 (복구) |
+         | 시점 | 트랜잭션 성공 | 트랜잭션 실패 |
+         | 결과 | DB에 반영 | 이전 상태로 |
+         | 이후 | ROLLBACK 불가 | COMMIT 전까지만 |
+
+---
+
+### 4. DML(Data Manipulation Language)
+
+1. **DML이란?**
+
+   > **한 줄 정의:** 저장된 데이터를 **실질적으로 처리(검색/삽입/삭제/수정)**하는 언어
+
+2. **DML 핵심 개념**
+   | 항목 | 내용 |
+   | ------ | ------------------------------------ |
+   | 사용자 | **DB 사용자** |
+   | 역할 | 사용자와 DBMS 간 **인터페이스** 제공 |
+   | 대상 | **데이터(튜플)** |
+3. **DML 명령어 4가지 (CRUD)**
+   | 명령어 | 한 줄 정의 | CRUD |
+   | :--------: | -------------------- | :----: |
+   | **SELECT** | 튜플 **검색** (조회) | Read |
+   | **INSERT** | 튜플 **삽입** | Create |
+   | **DELETE** | 튜플 **삭제** | Delete |
+   | **UPDATE** | 튜플 **갱신** (수정) | Update |
+   1. SELECT (검색)
+      - 테이블에서 조건에 맞는 튜플을 **검색**
+
+        ```sql
+        SELECT 속성명
+        FROM 테이블명
+        WHERE 조건;
+        ```
+
+   2. INSERT (삽입)
+      - 테이블에 새로운 튜플을 **삽입**
+      - 기본 형식
+
+        ```sql
+        INSERT INTO 테이블명 [(속성명1, 속성명2, ...)]
+        VALUES (데이터1, 데이터2, ...);
+        ```
+
+      - 규칙
+        - 속성과 데이터의 **개수, 타입** 일치해야 함
+        - 모든 속성 사용 시 **속성명 생략** 가능
+        - **SELECT문**으로 다른 테이블 데이터 삽입 가능
+      - 예제
+
+        ```sql
+        -- 일부 속성만 삽입
+        INSERT INTO 사원(이름, 부서) VALUES ('홍승현', '인터넷');
+
+        -- 모든 속성 삽입 (속성명 생략)
+        INSERT INTO 사원 VALUES ('장보고', '기획', '05/03/73', '홍제동', 90);
+
+        -- SELECT로 삽입
+        INSERT INTO 편집부원(이름, 생일, 주소, 기본급)
+        SELECT 이름, 생일, 주소, 기본급
+        FROM 사원
+        WHERE 부서 = '편집';
+        ```
+
+   3. DELETE (삭제)
+      - 테이블에서 조건에 맞는 튜플을 **삭제**
+      - 기본 형식
+        ```sql
+        DELETE
+        FROM 테이블명
+        [WHERE 조건];
+        ```
+      - 규칙
+        - WHERE 생략 → **모든 레코드 삭제**
+        - 모든 레코드 삭제해도 **테이블 구조는 남음**
+      - DELETE vs DROP
+        | 구분 | DELETE | DROP |
+        | :--: | :------------------: | :------------------: |
+        | 대상 | **데이터(튜플)** | **구조(테이블)** |
+        | 결과 | 테이블 구조 **남음** | 테이블 **완전 제거** |
+        | 언어 | DML | DDL |
+      - 예제
+
+        ```sql
+        -- 특정 튜플 삭제
+        DELETE FROM 사원 WHERE 이름 = '임꺽정';
+
+        -- 조건에 맞는 모든 튜플 삭제
+        DELETE FROM 사원 WHERE 부서 = '인터넷';
+
+        -- 모든 레코드 삭제 (테이블 구조는 남음)
+        DELETE FROM 사원;
+        ```
+
+   4. UPDATE (갱신)
+      - 테이블에서 특정 튜플의 내용을 **수정**
+      - 기본 형식
+        ```sql
+        UPDATE 테이블명
+        SET 속성명 = 데이터 [, 속성명 = 데이터, ...]
+        [WHERE 조건];
+        ```
+      - 예제
+
+        ```sql
+        -- 단일 속성 수정
+        UPDATE 사원
+        SET 주소 = '수색동'
+        WHERE 이름 = '홍길동';
+
+        -- 복수 속성 수정 (연산도 가능!)
+        UPDATE 사원
+        SET 부서 = '기획', 기본급 = 기본급 + 5
+        WHERE 이름 = '황진이';
+        ```
+
+### 5. DML - SELECT1
+
+1. **SELECT란?**
+
+   > **한 줄 정의:** 테이블에서 조건에 맞는 튜플을 **검색(조회)**하는 명령어
+
+2. **SELECT 일반 형식**
+
+   ```sql
+   SELECT [PREDICATE] [테이블명.]속성명 [AS 별칭]
+         [, 그룹함수(속성명)]
+         [, Window함수 OVER (PARTITION BY ~ ORDER BY ~)]
+   FROM 테이블명
+   [WHERE 조건]
+   [GROUP BY 속성명]
+   [HAVING 조건]
+   [ORDER BY 속성명 [ASC | DESC]];
+   ```
+
+3. **SELECT 절 구성요소**
+   1. PREDICATE (튜플 수 제한)
+
+      | 옵션            | 한 줄 정의                             |
+      | --------------- | -------------------------------------- |
+      | **ALL**         | **모든** 튜플 검색 (기본값, 생략 가능) |
+      | **DISTINCT**    | **중복 제거** (첫 번째 한 개만)        |
+      | **DISTINCTROW** | 튜플 전체 기준 중복 제거               |
+
+   2. 기타 요소
+
+      | 요소              | 설명                |
+      | ----------------- | ------------------- |
+      | `*`               | **모든 속성** 검색  |
+      | `테이블명.속성명` | 여러 테이블 사용 시 |
+      | **AS**            | 별칭 지정           |
+
+4. **조건 연산자**
+   1. 비교 연산자
+      | 연산자 | 의미 |
+      | :----: | ----------- |
+      | `=` | 같다 |
+      | `<>` | 같지 않다 |
+      | `>` | 크다 |
+      | `<` | 작다 |
+      | `>=` | 크거나 같다 |
+      | `<=` | 작거나 같다 |
+   2. 논리 연산자
+      | 연산자 | 의미 |
+      | :-----: | --------------- |
+      | **NOT** | 부정 |
+      | **AND** | 그리고 (둘 다) |
+      | **OR** | 또는 (하나라도) |
+   3. LIKE 연산자 (패턴 검색)
+      | 대표문자 | 의미 | 예시 |
+      | :------: | -------------------- | -------------------- |
+      | **%** | 모든 문자 (0개 이상) | '김%' → 김으로 시작 |
+      | **\_** | 문자 **하나** | '김\_' → 김X (2글자) |
+      | **#** | 숫자 **하나** | '#호' → 1호, 2호 |
+   4. 연산자 우선순위 (시험 필수!)
+      ```
+      산술 연산자 > 관계 연산자 > 논리 연산자
+      (×,/,+,-)    (=,<>,>,<)    (NOT > AND > OR)
+      ```
+
+5. **검색**
+   1. 기본 검색
+
+      ```sql
+      -- 모든 튜플 검색 (4가지 모두 동일)
+      SELECT * FROM 사원;
+      SELECT 사원.* FROM 사원;
+      SELECT 이름, 부서, 생일, 주소, 기본급 FROM 사원;
+      SELECT 사원.이름, 사원.부서, 사원.생일, 사원.주소, 사원.기본급 FROM 사원;
+      ```
+
+      - DISTINCT (중복 제거)
+
+        ```sql
+        SELECT DISTINCT 주소 FROM 사원;
+        ```
+
+      - AS (별칭)
+
+        ```sql
+        SELECT 부서 + '부서의' AS 부서2,
+              이름 + '의 월급' AS 이름2,
+              기본급 + 10 AS 기본급2
+        FROM 사원;
+        ```
+
+   2. 조건 지정 검색 (WHERE)
+      - 기본 조건
+        ```sql
+        -- 기획부 검색
+        SELECT * FROM 사원 WHERE 부서 = '기획';
+        ```
+      - AND (둘 다 만족)
+        ```sql
+        -- 기획부 AND 대흥동
+        SELECT * FROM 사원
+        WHERE 부서 = '기획' AND 주소 = '대흥동';
+        ```
+      - OR (하나라도 만족)
+
+        ```sql
+        -- 기획 OR 인터넷
+        SELECT * FROM 사원
+        WHERE 부서 = '기획' OR 부서 = '인터넷';
+        ```
+
+      - LIKE (패턴 검색)
+        ```sql
+        -- 성이 '김'인 사람
+        SELECT * FROM 사원 WHERE 이름 LIKE '김%';
+        ```
+      - BETWEEN (범위)
+
+        ```sql
+        -- 생일이 69/01/01 ~ 73/12/31
+        SELECT * FROM 사원
+        WHERE 생일 BETWEEN #01/01/69# AND #12/31/73#;
+        ```
+
+      - IS NULL (NULL 검색)
+
+        ```sql
+        -- 주소가 NULL인 사람
+        SELECT * FROM 사원 WHERE 주소 IS NULL;
+        ```
+
+   3. 정렬 검색 (ORDER BY)
+
+      |   옵션   | 의미                  |
+      | :------: | --------------------- |
+      | **ASC**  | **오름차순** (기본값) |
+      | **DESC** | **내림차순**          |
+      - 단일 정렬
+
+        ```sql
+        -- 주소 기준 내림차순, 상위 2개만
+        SELECT TOP 2 * FROM 사원 ORDER BY 주소 DESC;
+        ```
+
+      - 복합 정렬
+
+        ```sql
+        -- 부서 오름차순, 같으면 이름 내림차순
+        SELECT * FROM 사원 ORDER BY 부서 ASC, 이름 DESC;
+        ```
+
+6. **하위 질의 (서브쿼리)**
+   - 조건절 안에 또 다른 SELECT문을 사용
+   - 단일 값 반환 (=)
+     ```sql
+     -- 취미가 '나이트댄스'인 사원의 이름, 주소
+     SELECT 이름, 주소 FROM 사원
+     WHERE 이름 = (SELECT 이름 FROM 여가활동 WHERE 취미 = '나이트댄스');
+     ```
+   - 여러 값 반환 (IN / NOT IN)
+     ```sql
+     -- 취미활동 하지 않는 사원
+     SELECT * FROM 사원
+     WHERE 이름 NOT IN (SELECT 이름 FROM 여가활동);
+     ```
+   - 존재 여부 (EXISTS)
+     ```sql
+     -- 취미활동 하는 사원의 부서
+     SELECT 부서 FROM 사원
+     WHERE EXISTS (SELECT 이름 FROM 여가활동 WHERE 여가활동.이름 = 사원.이름);
+     ```
+
+7. **복수 테이블 검색**
+
+   ```sql
+   -- 경력 10년 이상인 사원 정보
+   SELECT 사원.이름, 사원.부서, 여가활동.취미, 여가활동.경력
+   FROM 사원, 여가활동
+   WHERE 여가활동.경력 >= 10 AND 사원.이름 = 여가활동.이름;
+   ```
+
+### 6. DML - SELECT2
+
+> **그룹 함수**, **WINDOW 함수**, **집합 연산자**를 이용한 검색
+
+1. **SELECT 일반 형식 (전체)**
+
+   ```sql
+   SELECT [PREDICATE] 속성명 [AS 별칭]
+         [, 그룹함수(속성명)]
+         [, WINDOW함수 OVER (PARTITION BY ~ ORDER BY ~)]
+   FROM 테이블명
+   [WHERE 조건]
+   [GROUP BY 속성명]
+   [HAVING 조건]
+   [ORDER BY 속성명 [ASC | DESC]];
+   ```
+
+2. **그룹 함수 (집계 함수)**
+   - GROUP BY로 지정된 그룹별로 속성 값을 **집계**하는 함수
+
+     | 함수               | 한 줄 정의   |
+     | ------------------ | ------------ |
+     | **COUNT(속성)**    | 튜플 **수**  |
+     | **SUM(속성)**      | **합계**     |
+     | **AVG(속성)**      | **평균**     |
+     | **MAX(속성)**      | **최대값**   |
+     | **MIN(속성)**      | **최소값**   |
+     | **STDDEV(속성)**   | **표준편차** |
+     | **VARIANCE(속성)** | **분산**     |
+
+3. **ROLLUP vs CUBE (시험 필수!)**
+
+   | 함수       | 한 줄 정의                       | 레벨 수 |
+   | ---------- | -------------------------------- | :-----: |
+   | **ROLLUP** | 그룹별 **소계** (하위→상위)      |   n+1   |
+   | **CUBE**   | **모든 조합**의 소계 (상위→하위) |   2ⁿ    |
+
+4. **WINDOW 함수**
+   - GROUP BY 없이 **속성의 범위(윈도우)**를 지정해 집계하는 함수
+   - 문법
+
+     ```sql
+     WINDOW함수 OVER (PARTITION BY 그룹속성 ORDER BY 정렬속성)
+     ```
+
+     | 요소             | 한 줄 정의                     |
+     | ---------------- | ------------------------------ |
+     | **PARTITION BY** | WINDOW 함수 적용 **범위** 지정 |
+     | **ORDER BY**     | PARTITION 내 **정렬 기준**     |
+
+   - WINDOW 함수 종류
+     | 함수 | 한 줄 정의 |
+     | ---------------- | -------------------------------------------- |
+     | **ROW_NUMBER()** | 각 레코드에 **일련번호** 부여 |
+     | **RANK()** | **순위** 반환 (공동 순위 **반영** → 1,2,2,4) |
+     | **DENSE_RANK()** | **순위** 반환 (공동 순위 **무시** → 1,2,2,3) |
+     - RANK vs DENSE_RANK (시험 필수!)
+       | 함수 | 공동 순위 처리 | 예시 |
+       | -------------- | :------------: | -------------- |
+       | **RANK** | 반영 (건너뜀) | 1, 2, 2, **4** |
+       | **DENSE_RANK** | 무시 (연속) | 1, 2, 2, **3** |
+   - 예제
+
+     ```sql
+     -- 상여내역별 상여금 순위 (내림차순)
+     SELECT 상여내역, 상여금,
+     RANK() OVER (PARTITION BY 상여내역 ORDER BY 상여금 DESC) AS 순위
+     FROM 상여금;
+     ```
+
+5. **GROUP BY / HAVING**
+   1. GROUP BY
+      - 특정 속성을 기준으로 **그룹화**하여 검색
+
+        ```sql
+        -- 부서별 상여금 평균
+        SELECT 부서, AVG(상여금) AS 평균
+        FROM 상여금
+        GROUP BY 부서;
+        ```
+
+   2. HAVING
+      - **그룹에 대한 조건** 지정 (GROUP BY와 함께 사용)
+
+        ```sql
+        -- 상여금 100 이상인 사원이 2명 이상인 부서
+        SELECT 부서, COUNT(*) AS 사원수
+        FROM 상여금
+        WHERE 상여금 >= 100
+        GROUP BY 부서
+        HAVING COUNT(*) >= 2;
+        ```
+
+6. **WHERE vs HAVING**
+
+   |   구분   |       WHERE       |     HAVING      |
+   | :------: | :---------------: | :-------------: |
+   |   대상   | **튜플(행)** 조건 |  **그룹** 조건  |
+   |   위치   |  GROUP BY **앞**  | GROUP BY **뒤** |
+   | 집계함수 |     사용 불가     |  **사용 가능**  |
+
+7. 집합 연산자 (통합 질의)
+   - 2개 이상의 SELECT 결과를 **하나로 통합**
+   - 문법
+
+     ```sql
+     SELECT ~ FROM 테이블1
+     UNION | UNION ALL | INTERSECT | EXCEPT
+     SELECT ~ FROM 테이블2;
+     ```
+
+     💡 **주의:** 두 SELECT문의 속성 **개수와 타입**이 동일해야 함!
+
+   - 집합 연산자 종류 (시험 필수!)
+     | 연산자 | 한 줄 정의 | 집합 | 중복 |
+     | :-----------: | ----------------- | :----: | :------: |
+     | **UNION** | 두 결과 **통합** | 합집합 | 제거 |
+     | **UNION ALL** | 두 결과 **통합** | 합집합 | **포함** |
+     | **INTERSECT** | **공통된** 행만 | 교집합 | 제거 |
+     | **EXCEPT** | 첫 번째 - 두 번째 | 차집합 | 제거 |
+   - 예제
+
+     ```sql
+     -- 합집합 (중복 제거)
+     SELECT * FROM 사원
+     UNION
+     SELECT * FROM 직원;
+
+     -- 교집합 (공통만)
+     SELECT * FROM 사원
+     INTERSECT
+     SELECT * FROM 직원;
+
+     -- 차집합 (사원 - 직원)
+     SELECT * FROM 사원
+     EXCEPT
+     SELECT * FROM 직원;
+     ```
+
+### 7. DML - JOIN
+
+1. **JOIN이란?**
+
+   > **한 줄 정의:** 2개의 테이블에서 연관된 튜플들을 **결합**하여 하나의 새로운 릴레이션을 반환
+
+2. **JOIN 분류**
+
+   ```
+   JOIN
+   ├── INNER JOIN
+   │   ├── EQUI JOIN (=)
+   │   │   └── NATURAL JOIN (중복 속성 제거)
+   │   └── NON-EQUI JOIN (>, <, >=, <=, <>)
+   ├── OUTER JOIN
+   │   ├── LEFT OUTER JOIN
+   │   ├── RIGHT OUTER JOIN
+   │   └── FULL OUTER JOIN
+   └── SELF JOIN (같은 테이블 조인)
+   ```
+
+3. **INNER JOIN**
+   1. EQUI JOIN (등가 조인)
+      - 공통 속성을 기준으로 **'='** 비교하여 같은 값을 연결
+      - 3가지 표기법
+
+        ```sql
+        -- 방법 1: WHERE절
+        SELECT 학번, 이름, 학생.학과코드, 학과명
+        FROM 학생, 학과
+        WHERE 학생.학과코드 = 학과.학과코드;
+
+        -- 방법 2: NATURAL JOIN (중복 속성 자동 제거)
+        SELECT 학번, 이름, 학과코드, 학과명
+        FROM 학생 NATURAL JOIN 학과;
+
+        -- 방법 3: JOIN ~ USING
+        SELECT 학번, 이름, 학과코드, 학과명
+        FROM 학생 JOIN 학과 USING(학과코드);
+        ```
+
+      - NATURAL JOIN
+        - EQUI JOIN에서 **중복된 속성을 제거**하여 한 번만 표기
+
+   2. NON-EQUI JOIN (비등가 조인)
+      - **'=' 이외의 비교 연산자** (>, \<, >=, \<=, \<>, BETWEEN)를 사용
+        ```sql
+        -- 성적 범위로 등급 매칭
+        SELECT 학번, 이름, 성적, 등급
+        FROM 학생, 성적등급
+        WHERE 학생.성적 BETWEEN 성적등급.최저 AND 성적등급.최고;
+        ```
+
+4. **OUTER JOIN**
+   - JOIN 조건에 **만족하지 않는 튜플도** 결과에 포함 (NULL로 채움)
+   - LEFT OUTER JOIN
+     - **왼쪽** 테이블의 모든 튜플 + 매칭되는 오른쪽 튜플
+
+     ```sql
+     -- 방법 1: LEFT OUTER JOIN
+     SELECT 학번, 이름, 학생.학과코드, 학과명
+     FROM 학생 LEFT OUTER JOIN 학과
+     ON 학생.학과코드 = 학과.학과코드;
+
+     -- 방법 2: (+) 사용 (오른쪽에 +)
+     SELECT 학번, 이름, 학생.학과코드, 학과명
+     FROM 학생, 학과
+     WHERE 학생.학과코드 = 학과.학과코드(+);
+     ```
+
+   - RIGHT OUTER JOIN
+     - **오른쪽** 테이블의 모든 튜플 + 매칭되는 왼쪽 튜플
+
+       ```sql
+       -- 방법 1: RIGHT OUTER JOIN
+       SELECT 학번, 이름, 학생.학과코드, 학과명
+       FROM 학생 RIGHT OUTER JOIN 학과
+       ON 학생.학과코드 = 학과.학과코드;
+
+       -- 방법 2: (+) 사용 (왼쪽에 +)
+       SELECT 학번, 이름, 학생.학과코드, 학과명
+       FROM 학생, 학과
+       WHERE 학생.학과코드(+) = 학과.학과코드;
+       ```
+
+   - FULL OUTER JOIN
+     - **양쪽** 테이블의 모든 튜플 (LEFT + RIGHT)
+
+       ```sql
+       SELECT 학번, 이름, 학과.학과코드, 학과명
+       FROM 학생 FULL OUTER JOIN 학과
+       ON 학생.학과코드 = 학과.학과코드;
+       ```
+
+   - OUTER JOIN 비교 (시험 필수!)
+
+     |   JOIN    | 결과                        |     (+) 위치     |
+     | :-------: | --------------------------- | :--------------: |
+     | **LEFT**  | **왼쪽** 테이블 전체 출력   | **오른쪽**에 (+) |
+     | **RIGHT** | **오른쪽** 테이블 전체 출력 |  **왼쪽**에 (+)  |
+     | **FULL**  | **양쪽** 모두 전체 출력     |        -         |
+
+5. **(+) 기호 암기법**
+   - **(+)는 NULL이 붙는 쪽!** = 데이터가 부족한 쪽
+     ```
+     LEFT OUTER JOIN = 오른쪽에 (+)
+                       왼쪽 = 학과코드(+)
+     ```
+
+6. **SELF JOIN**
+   - **같은 테이블**에서 2개의 속성을 연결하여 조인
+   - 특징
+     - 같은 테이블을 **별칭(Alias)**으로 구분
+     - 주로 **계층 구조** 데이터에 사용 (선배-후배, 상사-부하)
+
+     ```sql
+     -- 방법 1: JOIN ~ ON
+     SELECT A.학번, A.이름, B.이름 AS 선배
+     FROM 학생 A JOIN 학생 B
+     ON A.선배 = B.학번;
+
+     -- 방법 2: WHERE
+     SELECT A.학번, A.이름, B.이름 AS 선배
+     FROM 학생 A, 학생 B
+     WHERE A.선배 = B.학번;
+     ```
+
+   - SELF JOIN 이해 팁
+     - 같은 테이블을 **2개 그려서** 생각하면 쉬움!
+
+     ```
+     [학생 A]              [학생 B]
+     학번 | 이름 | 선배    학번 | 이름
+     -----|------|-----    -----|------
+     17   | 김선달| 15  →  15   | 고길동
+     19   | 아무개| 16  →  16   | 이순신
+     ```
+
+7. **JOIN 종류 총정리**
+
+   | JOIN              | 한 줄 정의                  |
+   | ----------------- | --------------------------- |
+   | **EQUI JOIN**     | **=** 비교로 연결           |
+   | **NATURAL JOIN**  | EQUI + **중복 속성 제거**   |
+   | **NON-EQUI JOIN** | **=** 외 비교연산자로 연결  |
+   | **LEFT OUTER**    | **왼쪽** 전체 + 오른쪽 매칭 |
+   | **RIGHT OUTER**   | **오른쪽** 전체 + 왼쪽 매칭 |
+   | **FULL OUTER**    | **양쪽** 전체               |
+   | **SELF JOIN**     | **같은 테이블** 조인        |
