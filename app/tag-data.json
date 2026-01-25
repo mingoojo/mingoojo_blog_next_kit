@@ -1,15 +1,15 @@
 {
-  "dev": 21,
-  "license": 29,
-  "coding-test": 1,
-  "sqld": 10,
-  "database": 11,
-  "spring": 5,
   "git": 1,
-  "redis": 1,
-  "markdown": 1,
   "next-js": 1,
   "javascript": 1,
   "typescript": 1,
-  "용어설명": 2
+  "spring": 5,
+  "database": 11,
+  "redis": 1,
+  "markdown": 1,
+  "dev": 25,
+  "license": 33,
+  "sqld": 10,
+  "용어설명": 2,
+  "coding-test": 1
 }
