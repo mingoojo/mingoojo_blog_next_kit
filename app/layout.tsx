@@ -102,10 +102,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: `
             html, body, * { -webkit-user-drag: none; }
             html, body {
-              -webkit-user-select: none;
-              -moz-user-select: none;
-              -ms-user-select: none;
-              user-select: none;
+              // -webkit-user-select: none;
+              // -moz-user-select: none;
+              // -ms-user-select: none;
+              // user-select: none;
             }
             input, textarea, [contenteditable="true"], input *, textarea *, [contenteditable="true"] * {
               -webkit-user-select: text;
