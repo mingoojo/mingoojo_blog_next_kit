@@ -1,16 +1,34 @@
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
 import siteMetadata from '@/data/siteMetadata'
+import { Blog } from 'contentlayer/generated'
+import { CoreContent } from 'pliny/utils/contentlayer'
 import { formatDate } from 'pliny/utils/formatDate'
+import dayjs from 'dayjs'
 
 const MAX_DISPLAY = 5
 
-export default function Home({ posts }) {
+type HomeProps = {
+  posts: CoreContent<Blog>[]
+}
+
+export default function Home({ posts }: HomeProps) {
+  const posts_sorted = posts.sort((a, b) => {
+    const a_date = dayjs(a.date)
+    const b_date = dayjs(b.date)
+
+    if (b_date.diff(a_date) !== 0) {
+      return b_date.diff(a_date)
+    } else {
+      return b.title.localeCompare(a.title)
+    }
+  })
+
   return (
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
         <div className="space-y-2 pt-6 pb-8 md:space-y-5">
-          <div className='flex flex-col justify-center items-center h-100 rounded-3xl dark:bg-gray-200'>
+          <div className="flex flex-col justify-center items-center h-100 rounded-3xl dark:bg-gray-200">
             <h1 className="text-3xl leading-9 font-extrabold tracking-tight text-gray-900 sm:text-4xl sm:leading-10 md:text-5xl md:leading-14 dark:text-gray-800">
               Hi, I'm{' '}
               <span className="relative">
@@ -23,8 +41,7 @@ export default function Home({ posts }) {
             </h1>
             <Link
               href="/about"
-              className="mt-2 inline-block px-4 py-2 font-semibold text-white bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full shadow-md hover:from-indigo-600 hover:to-blue-600 dark:from-indigo-400 dark:to-blue-400 dark:hover:from-indigo-500 dark:hover:to-blue-500 transition-transform transform hover:scale-105"
-            >
+              className="mt-2 inline-block px-4 py-2 font-semibold text-white bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full shadow-md hover:from-indigo-600 hover:to-blue-600 dark:from-indigo-400 dark:to-blue-400 dark:hover:from-indigo-500 dark:hover:to-blue-500 transition-transform transform hover:scale-105">
               더보기 →
             </Link>
           </div>
@@ -49,7 +66,7 @@ export default function Home({ posts }) {
         </div>
         <ul className="divide-y divide-gray-200 dark:divide-gray-700">
           {!posts.length && 'No posts found.'}
-          {posts.slice(0, MAX_DISPLAY).map((post) => {
+          {posts_sorted.slice(0, MAX_DISPLAY).map((post) => {
             const { slug, date, title, summary, tags } = post
             return (
               <li key={slug} className="py-12">
@@ -64,7 +81,7 @@ export default function Home({ posts }) {
                     <div className="space-y-5 xl:col-span-3">
                       <div className="space-y-6">
                         <div>
-                          <h2 className="text-2xl leading-8 font-bold tracking-tight">
+                          <h2 className="text-xl leading-8 font-bold tracking-tight">
                             <Link
                               href={`/blog/${slug}`}
                               className="text-gray-900 dark:text-gray-100">
