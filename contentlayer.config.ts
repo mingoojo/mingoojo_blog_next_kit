@@ -39,14 +39,16 @@ const icon = fromHtmlIsomorphic(
   </svg>
   </span>
 `,
-  { fragment: true }
+  { fragment: true },
 )
 
 const computedFields: ComputedFields = {
   readingTime: { type: 'json', resolve: (doc) => readingTime(doc.body.raw) },
   slug: {
     type: 'string',
-    resolve: (doc) => doc._raw.flattenedPath.replace(/^.+?(\/)/, ''),
+    resolve: (doc) => {
+      return doc._raw.flattenedPath.replace(/^.+?(\/)/, '')
+    },
   },
   path: {
     type: 'string',
@@ -87,7 +89,7 @@ function createSearchIndex(allBlogs) {
   ) {
     writeFileSync(
       `public/${path.basename(siteMetadata.search.kbarConfig.searchDocumentsPath)}`,
-      JSON.stringify(allCoreContent(sortPosts(allBlogs)))
+      JSON.stringify(allCoreContent(sortPosts(allBlogs))),
     )
     console.log('Local search index generated...')
   }
@@ -183,17 +185,18 @@ export const Authors = defineDocumentType(() => ({
 }))
 
 export default makeSource({
-  contentDirPath: 'data',
-  documentTypes: [Blog, Authors, Project],
+  contentDirPath: 'data', //데이터 폴더를 읽겠다는 설정
+  documentTypes: [Blog, Authors, Project], // defineDocumentType으로 정의한 타입들을 여기 등록
   mdx: {
-    cwd: process.cwd(),
+    cwd: process.cwd(), // MDX 처리 시 기준 디렉토리를 프로젝트 루트로 설정
     remarkPlugins: [
-      remarkExtractFrontmatter,
-      remarkGfm,
-      remarkCodeTitles,
-      remarkMath,
-      remarkImgToJsx,
-      remarkAlert,
+      remarkExtractFrontmatter, // frontmatter를 remark AST에서 추출
+      remarkGfm, // 테이블, 체크박스, 취소선 등 GitHub 스타일
+      remarkCodeTitles, // 코드블록 위에 파일명 타이틀 추가
+      // ```ts:contentlayer.config.ts 이런 문법
+      remarkMath, // $수식$ 인식
+      remarkImgToJsx, // <img> 태그를 next/image로 자동 변환
+      remarkAlert, // > [!NOTE] 같은 GitHub Alert 문법 지원
     ],
     rehypePlugins: [
       rehypeSlug,

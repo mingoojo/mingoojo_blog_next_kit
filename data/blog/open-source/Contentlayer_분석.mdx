@@ -1,508 +1,442 @@
 ---
-title: 'Next.js + Contentlayer로 기술 블로그 처음부터 만들기[1]'
-date: '2026-02-19'
-tags: ['next-js', 'contentlayer', 'tailwind', 'mdx', 'deep-dive']
+title: 'Next.js + Contentlayer로 기술 블로그 처음부터 만들기[2]'
+date: '2026-02-20'
+tags: ['next-js', 'contentlayer', 'mdx']
 draft: false
-summary: 'timlrx/tailwind-nextjs-starter-blog 템플릿을 분석하고, 동일한 스택을 처음부터 직접 구성하면서 각 요소가 어떤 역할을 하는지 이해한 과정을 정리했다.'
+summary: 'Contentlayer2가 내부적으로 어떻게 동작하는지, 공식 문서부터 실무 적용까지 전부 파헤쳐봤다.'
 authors: ['default']
 ---
 
 import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
 
-## 시작하며
+## Contentlayer가 뭔지부터
 
-`timlrx/tailwind-nextjs-starter-blog` 템플릿을 포크해서 블로그를 운영하고 있었는데,
-내부 구조를 제대로 이해하지 못한 채 쓰고 있다는 느낌이 계속 들었다.
+[공식문서](https://contentlayer.dev/docs/getting-started-cddd76b7)
 
-그냥 글만 쓰는 용도로 쓰기엔 아깝고, 뭔가 커스텀하려고 할 때마다 코드가 어떻게 돌아가는지 몰라서 막혔다.
+한 줄로 표현하면 **"MDX/Markdown 파일을 타입 안전한 JSON 데이터로 변환해주는 빌드 타임 SDK"** 다.
 
-그래서 이번에 같은 스택을 **처음부터 직접 구성**해보기로 했다.
-단순히 따라 만드는 게 아니라, 각 설정이 왜 필요한지 이해하면서 진행했다.
+처음 들으면 "그냥 `fs.readFileSync`로 읽으면 되는 거 아냐?" 라고 생각할 수 있는데,
+직접 파일을 읽는 방식과 Contentlayer를 쓰는 방식의 차이를 보면 바로 이해된다.
 
-<ImageWithCaption src="/static/images/contentLayer_git.png" alt="contentLayer git" caption="tailwind-nextjs-starter-blog의 git" />
+```ts
+  // ❌ 직접 파일 읽기 방식
+  import fs from 'fs'
+  import matter from 'gray-matter'
 
-[git 주소](https://github.com/timlrx/tailwind-nextjs-starter-blog)
+  const files = fs.readdirSync('posts')
+  const posts = files.map((file) => {
+    const raw = fs.readFileSync(`posts/${file}`, 'utf-8')
+    const { data, content } = matter(raw)
+    return { ...data, content }  // 타입? any. slug? 직접 계산. 검증? 없음.
+  })
+
+  // ✅ Contentlayer 방식
+  import { allBlogs } from 'contentlayer/generated'
+
+  // allBlogs는 이미 타입 완전히 보장됨
+  // slug, readingTime, toc 전부 자동 계산됨
+  // required 필드 없으면 빌드에서 미리 에러
+```
 
 ---
 
-## 1. 프로젝트 생성과 의존성 설치
+## contentlayer vs contentlayer2 — 왜 fork가 생겼나
 
-### 프로젝트 생성
+원래 `contentlayer`는 **Stackbit**이라는 회사가 만들고 유지보수했다.
+근데 2023년 중반 Netlify가 Stackbit을 인수하면서 contentlayer 개발이 사실상 멈췄다.
 
-```bash
-npx create-next-app@latest my-blog \
-  --typescript \
-  --tailwind \
-  --eslint \
-  --app \
-  --src-dir \
-  --import-alias "@/*"
+마지막 공식 릴리즈는 0.3.4인데, 이 시점 이후로 Next.js 14, 15, React 19 등
+주요 의존성들이 계속 업데이트되면서 호환 문제가 쌓이기 시작했다.
+
+그래서 `timlrx` (tailwind-nextjs-starter-blog 제작자)가 커뮤니티 포크를 만들었는데,
+그게 바로 **contentlayer2**다.
+
+### contentlayer2가 contentlayer와 다른 점
+
+```
+contentlayer (원본, 중단됨)
+├── Unified v9 기반 (구버전)
+├── Next.js 13까지만 안정적으로 지원
+└── TypeScript 4.x 지원
+
+contentlayer2 (커뮤니티 포크, 유지보수 중)
+├── Unified v11+ 기반 (최신)
+├── Next.js 15까지 지원
+├── TypeScript 5+ 요구 (ts-pattern 최신 버전 때문)
+└── API는 100% 동일 — 패키지 이름만 다름
 ```
 
-`--src-dir` 옵션으로 생성하면 `src/app/` 구조가 만들어진다.
-나중에 `@/` 경로 설정이 `src/` 기준인지 루트 기준인지 헷갈릴 수 있으니 처음에 잘 잡아야 한다.
-
-### 의존성 설치
-
-패키지가 많은데 역할별로 나눠서 이해하면 쉽다.
+마이그레이션은 패키지 이름만 바꾸면 된다.
 
 ```bash
-# Contentlayer - MDX 파일을 타입 안전한 JSON으로 변환
-npm install contentlayer2 next-contentlayer2
+# before
+contentlayer, next-contentlayer
 
-# MDX 파이프라인 - 마크다운 → HTML 변환 플러그인들
-npm install \
-  remark remark-gfm remark-math \
-  rehype-slug rehype-autolink-headings \
-  rehype-prism-plus rehype-katex \
-  unist-util-visit hast-util-from-html-isomorphic
-
-# UI / 유틸
-npm install next-themes pliny reading-time github-slugger gray-matter
-
-# Tailwind 플러그인
-npm install @tailwindcss/typography @tailwindcss/forms
-
-# 개발 도구
-npm install -D husky cross-env @next/bundle-analyzer concurrently
+# after
+contentlayer2, next-contentlayer2
 ```
 
-각 플러그인이 뭘 하는지 간단히 정리하면:
+```ts
+// before
+import { defineDocumentType, makeSource } from 'contentlayer/source-files'
 
-- `remark-gfm` — GitHub Flavored Markdown. 테이블, 체크박스, 취소선 지원
-- `remark-math` — `$E=mc^2$` 같은 수식 문법 인식
-- `rehype-slug` — 헤딩에 id 자동 부여 (`<h2 id="시작하며">`)
-- `rehype-autolink-headings` — 헤딩에 앵커 링크 자동 추가
-- `rehype-prism-plus` — 코드 블록 문법 하이라이팅
-- `rehype-katex` — 수식을 실제 HTML로 렌더링
-- `reading-time` — 글 읽는 데 걸리는 예상 시간 자동 계산
-- `github-slugger` — `My Post Title` → `my-post-title` 변환
-- `pliny` — 블로그에 필요한 유틸 함수 모음 (sortPosts 등)
+// after
+import { defineDocumentType, makeSource } from 'contentlayer2/source-files'
+```
 
 ---
 
-## 2. 버전 이슈 — Next.js 15로 다운그레이드
+## 내부 동작 원리
 
-### 문제
+Contentlayer2가 어떻게 동작하는지 단계별로 파헤쳐봤다.
 
-`create-next-app` 최신 버전으로 생성하면 **Next.js 16**이 설치된다.
-근데 `next-contentlayer2`가 아직 Next.js 16 + Turbopack을 완전히 지원하지 않아서
-개발 서버를 켜면 이런 에러가 난다.
+### 전체 파이프라인
 
 ```
-ERROR: This build is using Turbopack, with a `webpack` config and no `turbopack` config.
+1. 파일 감지
+   contentlayer.config.ts의 contentDirPath 스캔
+   filePathPattern과 매칭되는 파일 수집
+
+2. 콘텐츠 파싱
+   gray-matter로 frontmatter 분리
+   남은 본문은 MDX/Markdown으로 처리
+
+3. 스키마 검증
+   defineDocumentType에서 선언한 fields와 대조
+   required 필드 없으면 빌드 에러 발생
+
+4. computedFields 실행
+   각 필드의 resolve 함수 실행
+   slug, readingTime, toc 등 자동 생성
+
+5. MDX/Markdown 컴파일
+   remark 플러그인 체인 실행 (Markdown → MDAST)
+   rehype 플러그인 체인 실행 (MDAST → HTML/JSX)
+
+6. 결과물 생성
+   .contentlayer/generated/ 에 JSON 파일 생성
+   TypeScript 타입 정의 파일 자동 생성
+   index.mjs export 파일 생성
 ```
 
-`next-contentlayer2`가 webpack 플러그인 방식으로 Next.js 빌드 과정에 끼어드는데,
-Turbopack이 기본값이 된 Next.js 16에서는 이 방식이 제대로 동작하지 않는 거다.
+### 생성되는 파일 구조
 
-### 해결
-
-원본 템플릿과 동일하게 **Next.js 15로 다운그레이드**.
-
-```bash
-npm install next@15.0.2 react@rc react-dom@rc
+```
+.contentlayer/generated/
+├── Blog/
+│   ├── _index.json           ← 모든 블로그 글 데이터
+│   ├── hello-world.mdx.json  ← 개별 글 데이터
+│   └── series__part-1.mdx.json
+├── Authors/
+│   └── _index.json
+├── index.d.ts                ← 자동 생성된 TypeScript 타입
+└── index.mjs                 ← ESM export
 ```
 
-```json
-// package.json
-{
-  "scripts": {
-    "dev": "cross-env INIT_CWD=$PWD next dev",
-    "build": "cross-env INIT_CWD=$PWD next build"
-  }
+`index.d.ts`를 열어보면 이런 식으로 타입이 자동 생성되어 있다.
+
+```ts
+// .contentlayer/generated/index.d.ts (자동 생성)
+export interface Blog {
+  title: string
+  date: IsoDateTimeString
+  tags: string[]
+  draft?: boolean
+  summary?: string
+  // computedFields
+  slug: string
+  readingTime: ReadingTime
+  toc: TocItem[]
+  body: MDX
+  _id: string
+  _raw: RawDocumentData
 }
+
+export declare const allBlogs: Blog[]
 ```
 
-Next.js 15에서는 `withContentlayer`가 webpack 플러그인으로 빌드에 자동으로 끼어들어서
-별도로 contentlayer를 실행하지 않아도 `npm run dev` 하나로 다 된다.
+이게 빌드할 때마다 새로 생성되기 때문에 타입이 항상 실제 파일과 일치한다.
 
 ---
 
-## 3. contentlayer.config.ts — 핵심 엔진
+## defineDocumentType 완전 분석(contentlayer.config.ts)
 
-이 파일이 프로젝트에서 가장 중요하다. 역할이 세 가지다.
+### defineDocumentType이 하는 일
 
-```
-1. 문서 타입 정의  →  Blog 글은 어떤 frontmatter를 가지는가
-2. computedFields  →  빌드 타임에 자동으로 계산할 값들
-3. MDX 파이프라인  →  마크다운을 HTML로 변환할 때 어떤 플러그인을 쓸건가
-```
+`defineDocumentType`으로 타입을 정의하면 contentlayer가 빌드 타임에 3가지를 자동으로 만들어준다.
 
-### 전체 데이터 흐름
+1. TypeScript 타입 생성
 
-```
-data/blog/my-post.mdx
-  ↓
-contentlayer (빌드 타임 실행)
-  ├── frontmatter 파싱 + 타입 검증
-  ├── computedFields 계산 (slug, readingTime, toc...)
-  ├── remark 플러그인 체인 (마크다운 → AST)
-  └── rehype 플러그인 체인 (AST → HTML)
-  ↓
-.contentlayer/generated/Blog/_index.json
-  ↓
-import { allBlogs } from 'contentlayer/generated'
-// 완전한 TypeScript 타입 보장
-```
+   ```ts
+   // .contentlayer/generated/index.d.ts (자동 생성)
+   export interface Blog {
+      title: string
+      date: IsoDateTimeString
+      tags: string[]
+      slug: string        // computedField
+      readingTime: JSON   // computedField
+      body: MDX
+   }
+   ```
 
-### computedFields
+2. allXxx 배열 생성
 
-frontmatter에 직접 쓰지 않아도 빌드 타임에 자동으로 계산되는 필드들이다.
-이게 contentlayer의 핵심 기능 중 하나.
+   ```ts
+   export declare const allBlogs: Blog[]
+   export declare const allAuthors: Authors[]
+   ```
 
-```ts
-const computedFields: ComputedFields = {
-  // 파일 경로에서 slug 자동 추출
-  // data/blog/my-post.mdx          → "my-post"
-  // data/blog/series/part-1.mdx    → "series/part-1"
-  slug: {
-    type: 'string',
-    resolve: (doc) => doc._raw.flattenedPath.replace(/^.+?(\/)/, ''),
-  },
+3. import해서 바로 사용 가능
 
-  // 글 읽는 시간 자동 계산
-  // { text: '5 min read', minutes: 5, words: 1000 }
-  readingTime: {
-    type: 'json',
-    resolve: (doc) => readingTime(doc.body.raw),
-  },
+   ```ts
+   import { allBlogs } from 'contentlayer/generated'
+   import type { Blog } from 'contentlayer/generated'
 
-  // 페이지 URL 자동 생성
-  path: {
-    type: 'string',
-    resolve: (doc) => `/${doc._raw.flattenedPath}`,
-  },
+   // 완전한 타입 보장 상태로 사용
+   const post: Blog = allBlogs[0]
+   post.title        // string
+   post.readingTime  // JSON
+   ```
 
-  // 헤딩 추출 → 목차(TOC) 자동 생성
-  toc: {
-    type: 'json',
-    resolve: (doc) => {
-      const slugger = new GithubSlugger()
-      const headingLines = doc.body.raw
-        .split('\n')
-        .filter((line: string) => line.match(/^#{1,6}\s/))
+   즉 `defineDocumentType` 하나가 **스키마 정의 → 타입 생성 → 데이터 접근**을 전부 연결해준다.
 
-      return headingLines.map((raw: string) => {
-        const text = raw.replace(/^#{1,6}\s/, '')
-        // #의 개수로 레벨 계산 (h1~h6 전부 정확히 처리)
-        const level = raw.match(/^(#{1,6})\s/)?.[1].length ?? 1
-        return { text, level, url: '#' + slugger.slug(text) }
-      })
-    },
-  },
-}
-```
-
-처음에 TOC 레벨 계산을 이렇게 작성했다가 버그를 만났다.
+### defineDocumentType 구조
 
 ```ts
-// ❌ h4, h5, h6이 전부 level: 1이 되는 버그
-const level = raw.startsWith('### ') ? 3 : raw.startsWith('## ') ? 2 : 1
-```
+//contentlayer.config.ts
+import { defineDocumentType } from 'contentlayer2/source-files'
 
-`####` 이상의 헤딩은 어떤 조건에도 안 걸려서 전부 level 1이 됐다.
-`#`의 개수를 직접 세는 방식으로 고쳤다.
-
-### Blog 문서 타입 정의
-
-```ts
 export const Blog = defineDocumentType(() => ({
-  name: 'Blog',
-  filePathPattern: 'blog/**/*.mdx',
-  contentType: 'mdx',
-  fields: {
-    title: { type: 'string', required: true },   // required: true면 없을 때 빌드 에러
-    date: { type: 'date', required: true },
-    tags: { type: 'list', of: { type: 'string' }, default: [] },
-    lastmod: { type: 'date' },
-    draft: { type: 'boolean' },                  // true면 배포에서 제외
-    summary: { type: 'string' },
-    images: { type: 'json' },
-    authors: { type: 'list', of: { type: 'string' } },
-    layout: { type: 'string' },
-    canonicalUrl: { type: 'string' },
-  },
-  computedFields,
+  name: 'Blog',               // 타입명 — allBlogs, Blog 타입 이름이 됨
+  filePathPattern: 'blog/**/*.mdx',  // glob 패턴으로 파일 매칭
+  contentType: 'mdx',         // 'mdx' | 'markdown' | 'data'
+  fields: { ... },
+  computedFields: { ... },
 }))
 ```
 
-`required: true`로 선언된 필드가 없으면 빌드 타임에 에러가 난다.
-이게 contentlayer의 타입 안전성 보장 방식이다.
-런타임에 `undefined` 터지는 게 아니라 빌드에서 미리 잡아준다.
+1.  contentType 설정
 
-### onSuccess 콜백 — 삽질 포인트
+    ```ts
+    // mdx: JSX 포함 가능, 컴포넌트 삽입 가능
+    contentType: 'mdx'
 
-빌드 완료 후 검색 인덱스 JSON 파일을 생성하는 콜백이다.
+    // markdown: 순수 마크다운만. 더 빠른 처리
+    contentType: 'markdown'
 
-```ts
-// ❌ 이렇게 하면 타입 에러
-onSuccess: async (importData) => {
-  const { allBlogs } = await importData()  // 'allBlogs' 속성이 없다는 에러
-}
+    // data: YAML, JSON 파일용. body 없음
+    contentType: 'data'
+    ```
 
-// ✅ allDocuments에서 type으로 필터링
-onSuccess: async (importData) => {
-  const { allDocuments } = await importData()
-  const allBlogs = allDocuments.filter((doc) => doc.type === 'Blog')
-  ...
-}
-```
+    블로그 글처럼 MDX 컴포넌트를 쓰려면 `mdx`,
+    순수 마크다운 문서라면 `markdown`이 더 빠르다.
 
-contentlayer2에서 `importData()`는 `{ allDocuments: Document[] }` 만 반환한다.
-공식 문서나 원본 코드에서 `allBlogs`를 직접 꺼내는 예제를 보고 그대로 했다가
-타입 에러를 만났다. `type` 필드로 필터링하는 방식으로 해결했다.
+2.  fields — 타입 시스템
 
----
+    지원하는 필드 타입 전체 목록이다.
 
-## 4. MDX 파이프라인 — remark와 rehype의 관계
+    ```ts
+      fields: {
+         // 내가 원하는 필드 뭐든 추가 가능
+         // 기본 타입들
+         title:    { type: 'string',  required: true },
+         count:    { type: 'number' },
+         isPublic: { type: 'boolean' },
+         date:     { type: 'date' },     // Date 객체로 자동 파싱
+         // 리스트
+         tags: {
+            type: 'list',
+            of: { type: 'string' },
+            default: []
+         },
+         // enum — 정해진 값만 허용
+         status: {
+            type: 'enum',
+            options: ['draft', 'published', 'archived'],
+            default: 'draft',
+         },
+         // json — 자유 형태 객체
+         metadata: { type: 'json' },
+      }
+    ```
 
-처음에 remark랑 rehype가 뭔지 헷갈렸는데, 변환 파이프라인의 단계별 역할이 다르다.
+3.  defineNestedType — 재사용 가능한 중첩 타입
 
-```
-.mdx 파일 (원문)
-  ↓
-[remark 단계] 마크다운 텍스트 → MDAST (마크다운 AST)
-  ├── remark-gfm     : 테이블, 체크박스 등 GFM 문법 파싱
-  └── remark-math    : $수식$ 문법 인식
+    필드 안에 구조화된 객체가 필요할 때 쓴다.
 
-  ↓
-[rehype 단계] MDAST → HAST (HTML AST) → HTML 문자열
-  ├── rehype-slug              : <h2 id="제목"> 자동 추가
-  ├── rehype-autolink-headings : 헤딩에 # 앵커 링크 추가
-  ├── rehype-katex             : 수식 → <span class="katex">...</span>
-  └── rehype-prism-plus        : 코드 블록에 언어별 색상 클래스 추가
-```
+    ```ts
+       import { defineNestedType, defineDocumentType } from 'contentlayer2/source-files'
 
-플러그인 순서가 중요하다. `rehype-slug`가 `rehype-autolink-headings`보다 먼저 와야 한다.
-앵커 링크를 만들려면 먼저 헤딩에 id가 있어야 하기 때문.
+       // 재사용 가능한 중첩 타입 정의
+       const SEO = defineNestedType(() => ({
+          name: 'SEO',
+          fields: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          image: { type: 'string' },
+          },
+       }))
 
----
+       const Series = defineNestedType(() => ({
+          name: 'Series',
+          fields: {
+          title: { type: 'string', required: true },
+          order: { type: 'number', required: true },
+          },
+       }))
 
-## 5. Server Component vs Client Component 경계
+       export const Blog = defineDocumentType(() => ({
+          name: 'Blog',
+          filePathPattern: 'blog/**/*.mdx',
+          contentType: 'mdx',
+          fields: {
+             title: { type: 'string', required: true },
+             seo:    { type: 'nested', of: SEO },      // 중첩 객체
+             series: { type: 'nested', of: Series },   // 시리즈 정보
+          },
+       }))
+    ```
 
-Next.js App Router를 쓰면서 이 경계를 제대로 이해해야 한다.
+4.  isSingleton — 단일 파일 타입
+    사이트 전체 설정처럼 딱 하나만 있는 파일에 쓴다.
 
-### 문제가 된 코드
+    ```ts
+    export const SiteConfig = defineDocumentType(() => ({
+      name: 'SiteConfig',
+      filePathPattern: 'config/site.yaml',
+      isSingleton: true,   // allSiteConfigs 대신 siteConfig로 단일 export
+      contentType: 'data',
+      fields: {
+         title:       { type: 'string', required: true },
+         description: { type: 'string' },
+         url:         { type: 'string', required: true },
+      },
+    }))
+    ```
 
-처음에 `[slug]/page.tsx`를 이렇게 작성했다.
-
-```tsx
-// ❌ Server Component 안에서 Hook 사용
-export default function BlogPostPage({ params }) {
-  const post = allBlogs.find(...)
-  const MDXComponent = useMDXComponent(post.body.code)  // Hook!
-
-  return <MDXComponent />  // 에러: Cannot create components during render
-}
-```
-
-에러 메시지:
-
-```
-Error: Cannot create components during render
-Components created during render will reset their state each time they are created.
-```
-
-### 원인
-
-`useMDXComponent`는 React Hook이다.
-Hook은 `'use client'`로 선언된 Client Component에서만 사용할 수 있다.
-App Router에서 기본 컴포넌트는 Server Component이기 때문에 Hook을 쓸 수 없다.
-
-### 해결 — 역할에 따라 분리
-
-```tsx
-// src/components/MDXContent.tsx
-'use client'  // ← Client Component 선언
-
-import { useMDXComponent } from 'next-contentlayer2/hooks'
-
-export default function MDXContent({ code }: { code: string }) {
-  const MDXComponent = useMDXComponent(code)
-  return <MDXComponent />
-}
-```
-
-```tsx
-// src/app/blog/[slug]/page.tsx
-// Server Component (기본값, 'use client' 없음)
-import MDXContent from '@/components/MDXContent'
-
-export default async function BlogPostPage({ params }) {
-  const post = allBlogs.find(...)
-
-  return (
-    <article>
-      <h1>{post.title}</h1>
-      <MDXContent code={post.body.code} />  // Client Component에 code만 전달
-    </article>
-  )
-}
-```
-
-```
-page.tsx (Server Component)
-  → 데이터 페칭, SEO 메타데이터, 정적 생성
-  → 렌더링 결과가 서버에서 HTML로 생성됨
-
-MDXContent.tsx (Client Component)
-  → Hook 사용 (useMDXComponent)
-  → 인터랙티브한 MDX 렌더링
-```
-
-이 패턴이 App Router의 핵심이다.
-"서버에서 할 수 있는 건 서버에서, 클라이언트가 꼭 필요한 부분만 클라이언트에서."
+    ```ts
+      // 사용할 때
+      import { siteConfig } from 'contentlayer/generated'  // 배열이 아닌 단일 객체
+    ```
 
 ---
 
-## 6. Next.js 15의 async params
+## computedFields
 
-Next.js 15에서 동적 라우트의 `params`가 비동기로 바뀌었다.
+1. 기본 — slug와 path
 
-```tsx
-// ❌ Next.js 14 이하
-export default function BlogPostPage({ params }: { params: { slug: string } }) {
-  const post = allBlogs.find((p) => p.slug === params.slug)
-}
+   ```ts
+    computedFields: {
+    // 파일 경로에서 slug 추출
+    // blog/my-post.mdx          → "my-post"
+    // blog/series/part-1.mdx    → "series/part-1"
+    slug: {
+       type: 'string',
+       resolve: (doc) => doc._raw.flattenedPath.replace(/^.+?(\/)/, ''),
+    },
 
-// ✅ Next.js 15
-export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params  // await 필요
-  const post = allBlogs.find((p) => p.slug === slug)
-}
-```
-
-`generateMetadata`도 동일하게 수정해야 한다.
-
-```tsx
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ slug: string }>
-}) {
-  const { slug } = await params
-  const post = allBlogs.find((p) => p.slug === slug)
-  if (!post) return {}
-  return { title: post.title, description: post.summary }
-}
-```
-
----
-
-## 7. Tailwind 버전 충돌
-
-`create-next-app` 최신 버전으로 생성하면 **Tailwind v4**가 설치된다.
-원본 템플릿은 **v3** 기반이고, v4는 문법이 완전히 달라졌다.
-
-```css
-/* ❌ v3 문법 — v4에서 동작 안 함 */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ✅ v4 문법 */
-@import "tailwindcss";
-```
-
-v4는 `tailwind.config.ts`의 `plugins` 방식도 바뀌고,
-`@tailwindcss/typography` 같은 플러그인도 v4 호환 버전이 필요해서 설정이 복잡해진다.
-
-원본 템플릿과 동일한 환경을 맞추려면 v3로 다운그레이드하는 게 낫다.
-
-```bash
-npm install tailwindcss@^3.4.14
-```
-
-`tailwind.config.ts`에서도 `require()` 대신 ES module import 방식을 써야 ESLint 에러가 안 난다.
-
-```ts
-// ❌ require() 방식 - ESLint 에러
-plugins: [require('@tailwindcss/typography')]
-
-// ✅ import 방식
-import typography from '@tailwindcss/typography'
-plugins: [typography]
-```
-
----
-
-## 8. 다크모드 ThemeSwitch — hydration 이슈
-
-다크모드 토글 버튼을 만들 때 이런 패턴을 쓴다.
-
-```tsx
-'use client'
-
-export default function ThemeSwitch() {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
-  if (!mounted) return null  // 클라이언트에서만 렌더링
-
-  return (
-    <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
-      {theme === 'dark' ? '🌞' : '🌙'}
-    </button>
-  )
-}
-```
-
-`mounted` 상태를 쓰는 이유가 있다.
-
-서버에서 렌더링할 때는 현재 테마가 뭔지 알 수 없다.
-`localStorage`나 `prefers-color-scheme`은 브라우저에서만 접근할 수 있기 때문.
-
-서버에서 렌더링된 HTML과 클라이언트에서 hydration된 결과가 다르면
-React가 hydration mismatch 에러를 낸다.
-
-그래서 서버에서는 아무것도 렌더링하지 않고(`return null`),
-클라이언트에서 마운트된 후에만 테마에 맞는 버튼을 보여주는 것.
-
----
-
-## 9. tsconfig.json — 경로 설정
-
-`src/` 기반 프로젝트에서 자주 헷갈리는 부분이다.
-
-```json
-{
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./*"],
-      "contentlayer/generated": ["./.contentlayer/generated"]
+    // 페이지 URL
+    path: {
+       type: 'string',
+       resolve: (doc) => `/blog/${doc._raw.flattenedPath.replace(/^.+?(\/)/, '')}`,
+    },
     }
-  },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".contentlayer/generated"
-  ]
-}
-```
+   ```
 
-`@/*` 경로가 `./*` (루트 기준)면 `data/`는 루트에, `lib/`도 루트에 있어야 한다.
-`./src/*`로 설정하면 `src/` 안에서 찾는다.
+2. \_raw 객체가 뭔가
 
-둘 중 하나로 통일하는 게 중요하다. 섞이면 계속 "모듈을 찾을 수 없습니다" 에러가 난다.
+   `doc._raw`는 파일에 대한 메타 정보를 담고 있다.
 
----
+   ```ts
+   doc._raw = {
+      sourceFilePath: 'blog/series/part-1.mdx',   // 전체 경로
+      sourceFileName: 'part-1.mdx',               // 파일명만
+      sourceFileDir: 'blog/series',               // 디렉토리
+      flattenedPath: 'blog/series/part-1',        // 확장자 제거한 전체 경로
+      contentType: 'mdx',
+   }
+   ```
+
+   slug를 파일명 기준으로 만들고 싶으면:
+
+   ```ts
+   slug: {
+   type: 'string',
+   resolve: (doc) => doc._raw.sourceFileName.replace(/\.mdx$/, ''),
+   // blog/series/part-1.mdx → "part-1" (디렉토리 무시)
+   }
+   ```
+
+   경로 포함 slug가 필요하면:
+
+   ```ts
+   slug: {
+   type: 'string',
+   resolve: (doc) => doc._raw.flattenedPath.replace(/^blog\//, ''),
+   // blog/series/part-1 → "series/part-1"
+   }
+   ```
+
+3. readingTime 계산
+
+   ```ts
+   import readingTime from 'reading-time'
+
+   readingTime: {
+   type: 'json',
+   resolve: (doc) => readingTime(doc.body.raw),
+   // 반환값: { text: '5 min read', minutes: 5, time: 300000, words: 1000 }
+   }
+   ```
+
+## makeSource 완전 분석
+
+`makeSource`는 `contentlayer.config.ts`의 최종 조립 함수이다.
+`defineDocumentType`으로 타입을 정의하고, `makeSource`로 그걸 전부 묶어서 "이제 이 설정대로 빌드해" 라고 `contentlayer에` 전달.
+
+1. 핵심 옵션들
+
+   ```ts
+   export default makeSource({
+      // 콘텐츠 루트 디렉토리
+      contentDirPath: 'data',
+
+      // 특정 디렉토리만 포함
+      contentDirInclude: ['blog', 'authors'],
+
+      // 제외할 디렉토리
+      contentDirExclude: ['drafts', 'templates'],
+
+      // 등록할 문서 타입들
+      documentTypes: [Blog, Authors],
+
+      // MDX 파이프라인 설정
+      mdx: {
+         remarkPlugins: [...],
+         rehypePlugins: [...],
+      },
+
+      // 빌드 완료 후 실행할 콜백
+      onSuccess: async (importData) => { ... },
+
+      // 필드 옵션
+      fieldOptions: {
+         bodyFieldName: 'content',    // 기본값: 'body'
+         typeFieldName: '__typename', // 기본값: 'type'
+      },
+
+      // 날짜 파싱 옵션
+      date: {
+         timezone: 'Asia/Seoul',  // 타임존 지정
+      },
+   })
+   ```
 
 ## 마치며
 
-단순히 템플릿을 가져다 쓸 때는 몰랐던 것들을 이번에 직접 만들면서 알게 됐다.
+Contentlayer2를 쓰는 이유를 한마디로 정리하면:
 
-**contentlayer가 하는 일** — MDX 파일을 타입 안전한 JSON으로 변환하고,
-빌드 타임에 slug, readingTime, toc 같은 값들을 자동으로 계산해준다.
-`allBlogs`를 import하면 완전한 타입이 붙어있는 이유가 이거다.
+> **"마크다운 파일을 DB처럼 쓰면서, 타입 안전성까지 가져가는 방법"**
 
-**Server / Client Component 경계** — App Router에서 기본은 Server Component다.
-Hook을 쓰려면 반드시 `'use client'`가 필요하고,
-최대한 Server Component로 유지하다가 꼭 필요한 부분만 Client로 분리하는 게 맞는 방향이다.
-
-**버전 관리** — Next.js, Tailwind, contentlayer 각각의 버전이 서로 맞아야 한다.
-최신 버전이 항상 좋은 게 아니고, 의존성들이 서로 호환되는 버전 조합을 찾는 게 중요하다.
-
-다음 단계로는 **테스트 세팅(Vitest)**, **Lighthouse CI**, **번들 분석**을 추가해볼 예정이다.
+원본 contentlayer 공식 문서가 아직 살아있으니 (`contentlayer.dev`) 필드 타입이나
+고급 설정이 필요하면 참고하면 된다. API가 contentlayer2랑 동일하다.

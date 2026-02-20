@@ -1,0 +1,201 @@
+---
+title: Python으로 로그 파일 자동 파싱 & CSV 생성 스케줄러 만들기
+date: '2026-02-20'
+tags: ['python', 'automation']
+draft: false
+summary: Python으로 특정 폴더의 로그 파일을 자동으로 읽고, 필요한 정보를 추출하여 CSV로 저장하는 스케줄러를 만든다.
+---
+
+# Python으로 로그 파일 자동 파싱 & CSV 생성 스케줄러 만들기
+
+## 개요
+
+수백 개의 로그 파일을 일일이 열어서 확인하는 건 비효율적이다.
+이번 글에서는 Python으로 특정 폴더의 로그 파일을 자동으로 읽고, 필요한 정보를 추출하여 CSV로 저장하는 스케줄러를 만들어 본다.
+
+## 환경
+
+- Python 3.x
+- python-dotenv (`pip install python-dotenv`)
+
+## 프로젝트 구조
+
+```
+python_project/
+├── src/
+│   └── file_read.py
+└── .env
+```
+
+## 1단계: 환경변수 설정
+
+로그 파일 경로를 코드에 하드코딩하지 않고 `.env` 파일로 분리한다.
+
+**.env**
+
+```
+LOG_DIR=/Users/jomingu/Desktop/qm_station_log
+```
+
+## 2단계: 로그 파일 구조 파악
+
+로그 폴더에는 `qm_station_log_420665.0.txt` 같은 형태의 파일이 다수 존재한다.
+
+각 파일 내부는 아래와 같은 형식이다:
+
+```
+[generateArrQm] Station 0 (BSNG) raw data rows: 125
+[generateArrQm] Station 1 (CCSB) raw data rows: 109
+[generateArrQm] Station 7 (JINJ) raw data rows: 0
+[generateArrQm] Station 14 (SIAN) raw data rows: 0
+...
+```
+
+여기서 추출할 정보는 4가지다:
+
+| 열              | 설명                                                |
+| --------------- | --------------------------------------------------- |
+| `number`        | 파일명에서 추출한 숫자 (예: `420665.0`)             |
+| `station_count` | `rows: 0`이 아닌 유효한 스테이션 수                 |
+| `avg_rows`      | 유효한 스테이션의 row 수 평균                       |
+| `stations`      | 유효한 스테이션 코드 목록 (예: `[BSNG, CCSB, ...]`) |
+
+## 3단계: 전체 코드
+
+```python
+import os
+import csv
+import re
+from datetime import datetime
+from dotenv import load_dotenv
+import time
+
+load_dotenv()
+
+LOG_DIR = os.environ.get('LOG_DIR', '/Users/jomingu/Desktop/qm_station_log')
+
+
+def job():
+    files = os.listdir(LOG_DIR)
+
+    rows = []
+    for f in files:
+        if f.endswith('.txt'):
+            num = f.replace('qm_station_log_', '').replace('.txt', '')
+
+            values = []
+            stations = []
+            with open(os.path.join(LOG_DIR, f), 'r') as txt:
+                for line in txt:
+                    line = line.strip()
+                    if line and not line.endswith('rows: 0'):
+                        last_num = int(line.split()[-1])
+                        values.append(last_num)
+                        # () 안의 4글자 스테이션 코드 추출
+                        match = re.search(r'\((\w{4})\)', line)
+                        if match:
+                            stations.append(match.group(1))
+
+            count = len(values)
+            avg = round(sum(values) / len(values), 2) if values else 0
+            station_list = '[' + ', '.join(stations) + ']'
+
+            rows.append([num, count, avg, station_list])
+
+    rows.sort()
+
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = os.path.join(LOG_DIR, f'output_{now}.csv')
+
+    with open(filename, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['number', 'station_count', 'avg_rows', 'stations'])
+        writer.writerows(rows)
+
+    print(f'[{now}] 저장완료: {filename}')
+
+
+print('스케줄러 시작 (Ctrl+C로 종료)')
+while True:
+    job()
+    time.sleep(10)
+```
+
+## 코드 상세 설명
+
+### 환경변수 로드
+
+```python
+from dotenv import load_dotenv
+load_dotenv()
+LOG_DIR = os.environ.get('LOG_DIR', '/Users/jomingu/Desktop/qm_station_log')
+```
+
+`.env` 파일에서 `LOG_DIR`을 읽어온다. 값이 없으면 기본 경로를 사용한다.
+
+### 파일명에서 숫자 추출
+
+```python
+num = f.replace('qm_station_log_', '').replace('.txt', '')
+```
+
+`qm_station_log_420665.0.txt` → `420665.0`
+
+### 유효 스테이션 필터링
+
+```python
+if line and not line.endswith('rows: 0'):
+```
+
+`rows: 0`으로 끝나는 줄(데이터가 없는 스테이션)은 제외한다.
+
+### row 수 추출 & 평균 계산
+
+```python
+last_num = int(line.split()[-1])   # 마지막 공백 이후 숫자
+values.append(last_num)
+avg = round(sum(values) / len(values), 2) if values else 0
+```
+
+각 줄의 마지막 숫자(예: 125, 109, 55...)를 수집하고 평균을 구한다.
+
+### 스테이션 코드 추출
+
+```python
+match = re.search(r'\((\w{4})\)', line)
+if match:
+    stations.append(match.group(1))
+```
+
+정규표현식으로 `(BSNG)`, `(CCSB)` 같은 괄호 안의 4글자 코드를 추출한다.
+
+### CSV 파일명에 타임스탬프
+
+```python
+now = datetime.now().strftime('%Y%m%d_%H%M%S')
+filename = os.path.join(LOG_DIR, f'output_{now}.csv')
+```
+
+실행 시점의 시간이 파일명에 포함되어 `output_20260220_143025.csv` 형태로 생성된다.
+
+### 10초 간격 스케줄러
+
+```python
+while True:
+    job()
+    time.sleep(10)
+```
+
+외부 라이브러리 없이 `time.sleep()`으로 간단하게 반복 실행한다. `Ctrl+C`로 종료할 수 있다.
+
+## 출력 결과 예시
+
+| number   | station_count | avg_rows | stations                |
+| -------- | ------------- | -------- | ----------------------- |
+| 371630.0 | 39            | 121.56   | [BSNG, CCSB, GANH, ...] |
+| 371675.0 | 38            | 118.23   | [BSNG, CCSB, GYJU, ...] |
+| ...      | ...           | ...      | ...                     |
+
+## 마무리
+
+이 스크립트를 활용하면 대량의 로그 파일을 수동으로 확인할 필요 없이 자동으로 핵심 지표를 추출하고 모니터링할 수 있다. 필요에 따라 `time.sleep()` 값을 조절하거나, 이메일/슬랙 알림 등을 추가하면 더 실용적인 모니터링 도구로 확장할 수 있다.
