@@ -1,0 +1,572 @@
+---
+title: Spring Boot 멀티모듈에서 PostgreSQL + MariaDB 멀티 데이터소스 설정하기
+date: '2026-02-03'
+tags: ['spring', "database"]
+draft: false
+summary: Spring Boot 멀티모듈 프로젝트에서 common 모듈은 PostgreSQL, importer 모듈은 PostgreSQL + MariaDB 두 개를 동시에 사용하는 구성을 정리한다.
+---
+
+# Spring Boot 멀티모듈에서 PostgreSQL + MariaDB 멀티 데이터소스 설정하기
+
+## 개요
+
+Spring Boot 멀티모듈 프로젝트에서 **common 모듈은 PostgreSQL**, **importer 모듈은 PostgreSQL + MariaDB** 두 개를 동시에 사용하는 구성을 정리한다.
+
+핵심은 common 모듈에 PostgreSQL 설정만 두고, importer 모듈에서 MariaDB를 추가로 연결하는 것이다. 다른 모듈들은 common만 의존하므로 기존 PostgreSQL 단일 데이터소스 설정에 영향을 주지 않는다.
+
+## 프로젝트 구조
+
+```
+study1/
+├── build.gradle                          ← 루트 Gradle
+├── settings.gradle
+├── ssr2osr-multi-module-common/          ← 공통 모듈 (PostgreSQL)
+│   ├── build.gradle
+│   └── src/main/
+│       ├── java/org/example/study1/ssr2osrmultimodulecommon/
+│       │   ├── domain/
+│       │   │   └── Item.java
+│       │   └── repository/
+│       │       └── ItemRepository.java
+│       └── resources/
+│           └── application-prod-common.yml
+└── ssr2osr-multi-module-importer/        ← 실행 모듈 (PostgreSQL + MariaDB)
+    ├── build.gradle
+    └── src/main/
+        ├── java/org/example/study1/ssr2osrmultimoduleimporter/
+        │   ├── Ssr2osrMultiModuleImporterApplication.java
+        │   ├── config/
+        │   │   ├── PostgresJpaConfig.java
+        │   │   └── MariaConfig.java
+        │   ├── controller/
+        │   │   └── ItemController.java
+        │   ├── service/
+        │   │   └── ItemService.java
+        │   └── mariadb/
+        │       ├── entity/
+        │       │   └── Item2.java
+        │       └── repository/
+        │           └── Item2Repository.java
+        └── resources/
+            └── application-prod.yml
+```
+
+## 1. Gradle 설정
+
+### 루트 build.gradle
+
+```groovy
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.3'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+bootJar { enabled = false }
+jar { enabled = false }
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'org.springframework.boot'
+    apply plugin: 'io.spring.dependency-management'
+
+    group = 'org.example.study1'
+    version = '0.0.1-SNAPSHOT'
+    sourceCompatibility = '22'
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        compileOnly 'org.projectlombok:lombok'
+        annotationProcessor 'org.projectlombok:lombok'
+    }
+}
+```
+
+### common 모듈 build.gradle
+
+```groovy
+bootJar { enabled = false }
+jar { enabled = true }
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'org.postgresql:postgresql'
+}
+```
+
+`bootJar = false`, `jar = true`로 설정해야 라이브러리 모듈로 동작한다.
+
+### importer 모듈 build.gradle
+
+```groovy
+bootJar { enabled = true }
+jar { enabled = false }
+
+dependencies {
+    implementation project(':ssr2osr-multi-module-common')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'org.mariadb.jdbc:mariadb-java-client'
+}
+```
+
+MariaDB 드라이버(`mariadb-java-client`)를 importer에만 추가한다.
+
+## 2. application.yml 설정
+
+### 핵심: yml 파일명 충돌 방지
+
+멀티모듈에서 common과 importer 둘 다 `application-prod.yml`이면 **classpath에서 하나만 로딩**되어 설정이 덮어써진다. 이를 방지하기 위해 common의 yml 파일명을 다르게 지정하고, importer에서 `spring.config.import`로 가져온다.
+
+### common: `application-prod-common.yml`
+
+```yaml
+spring:
+  application:
+    name: study1
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/springstudy
+    username: jomingu
+    password: 43054305
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: shop
+
+  jackson:
+    time-zone: Asia/Seoul
+
+server:
+  port: 8081
+```
+
+> **주의**: 파일명이 `application-prod.yml`이 아니라 `application-prod-common.yml`이다.
+
+### importer: `application-prod.yml`
+
+```yaml
+spring:
+  config:
+    import: classpath:application-prod-common.yml
+  sql:
+    init:
+      mode: never
+
+datasource:
+  mariadb:
+    url: jdbc:mariadb://127.0.0.1:3307/mysql
+    username: root
+    password: 4305
+    driver-class-name: org.mariadb.jdbc.Driver
+```
+
+`spring.config.import`로 common의 yml을 가져오면서, MariaDB 설정은 `datasource.mariadb` prefix로 별도 관리한다. PostgreSQL 설정은 `spring.datasource`, MariaDB 설정은 `datasource.mariadb`로 prefix가 다르다는 점이 중요하다.
+
+## 3. 메인 클래스 설정
+
+```java
+package org.example.study1.ssr2osrmultimoduleimporter;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+@SpringBootApplication(
+    scanBasePackages = "org.example.study1",
+    exclude = {
+        org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration.class
+    }
+)
+@EnableScheduling
+public class Ssr2osrMultiModuleImporterApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(Ssr2osrMultiModuleImporterApplication.class, args);
+    }
+}
+```
+
+두 가지 포인트가 있다.
+
+**`scanBasePackages = "org.example.study1"`**: 메인 클래스가 `ssr2osrmultimoduleimporter` 패키지에 있기 때문에, 기본 스캔 범위가 이 패키지 하위만 된다. common 모듈의 `ssr2osrmultimodulecommon` 패키지에 있는 Repository를 스캔하려면 상위 패키지를 명시해야 한다.
+
+**`exclude`로 자동 설정 비활성화**: 멀티 데이터소스를 수동으로 구성하기 때문에, Spring Boot의 자동 DataSource/JPA 설정이 충돌을 일으킨다. `DataSourceAutoConfiguration`과 `HibernateJpaAutoConfiguration`을 exclude해서 모든 데이터소스를 직접 관리한다.
+
+## 4. PostgreSQL Config (importer)
+
+```java
+package org.example.study1.ssr2osrmultimoduleimporter.config;
+
+import jakarta.persistence.EntityManagerFactory;
+import java.util.HashMap;
+import java.util.Map;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.JpaVendorAdapter;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
+import org.springframework.transaction.PlatformTransactionManager;
+
+@Configuration
+@EnableJpaRepositories(
+    basePackages = "org.example.study1.ssr2osrmultimodulecommon.repository",
+    entityManagerFactoryRef = "postgresEntityManagerFactory",
+    transactionManagerRef = "postgresTransactionManager"
+)
+public class PostgresJpaConfig {
+
+    @Bean
+    public JpaVendorAdapter jpaVendorAdapter() {
+        return new HibernateJpaVendorAdapter();
+    }
+
+    @Bean
+    public EntityManagerFactoryBuilder entityManagerFactoryBuilder(
+        JpaVendorAdapter jpaVendorAdapter) {
+        return new EntityManagerFactoryBuilder(jpaVendorAdapter, new HashMap<>(), null);
+    }
+
+    @Primary
+    @Bean
+    @ConfigurationProperties(prefix = "spring.datasource")
+    public DataSourceProperties postgresDataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Primary
+    @Bean
+    public DataSource postgresDataSource() {
+        return postgresDataSourceProperties()
+            .initializeDataSourceBuilder()
+            .build();
+    }
+
+    @Primary
+    @Bean
+    public LocalContainerEntityManagerFactoryBean postgresEntityManagerFactory(
+        EntityManagerFactoryBuilder builder) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("hibernate.hbm2ddl.auto", "update");
+        props.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
+        props.put("hibernate.default_schema", "shop");
+
+        return builder
+            .dataSource(postgresDataSource())
+            .packages("org.example.study1.ssr2osrmultimodulecommon.domain")
+            .persistenceUnit("postgres")
+            .properties(props)
+            .build();
+    }
+
+    @Primary
+    @Bean
+    public PlatformTransactionManager postgresTransactionManager(
+        @Qualifier("postgresEntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+}
+```
+
+**`@Primary`**: PostgreSQL이 기본 데이터소스임을 명시한다. `@Primary`가 없으면 Spring이 어떤 DataSource를 기본으로 쓸지 몰라서 에러가 난다.
+
+**`@ConfigurationProperties(prefix = "spring.datasource")`**: common의 yml에서 `spring.datasource` 하위 값(url, username, password, driver-class-name)을 읽어온다.
+
+**`@EnableJpaRepositories`의 `basePackages`**: common 모듈의 Repository 패키지를 지정하여 PostgreSQL EntityManager로 연결한다.
+
+**`JpaVendorAdapter`와 `EntityManagerFactoryBuilder`**: `HibernateJpaAutoConfiguration`을 exclude했기 때문에 이 빈들이 자동 생성되지 않는다. 직접 등록해줘야 MariaConfig에서도 `EntityManagerFactoryBuilder`를 주입받을 수 있다.
+
+**`.packages()`**: 이 EntityManager가 스캔할 엔티티 패키지를 지정한다. PostgreSQL은 common의 `domain` 패키지를 바라본다.
+
+## 5. MariaDB Config (importer)
+
+```java
+package org.example.study1.ssr2osrmultimoduleimporter.config;
+
+import jakarta.persistence.EntityManagerFactory;
+import java.util.HashMap;
+import java.util.Map;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.orm.jpa.EntityManagerFactoryBuilder;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.orm.jpa.JpaTransactionManager;
+import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
+import org.springframework.transaction.PlatformTransactionManager;
+
+@Configuration
+@EnableJpaRepositories(
+    basePackages = "org.example.study1.ssr2osrmultimoduleimporter.mariadb.repository",
+    entityManagerFactoryRef = "mariaEntityManagerFactory",
+    transactionManagerRef = "mariaTransactionManager"
+)
+public class MariaConfig {
+
+    @Bean
+    @ConfigurationProperties(prefix = "datasource.mariadb")
+    public DataSourceProperties mariaDataSourceProperties() {
+        return new DataSourceProperties();
+    }
+
+    @Bean
+    public DataSource mariaDataSource() {
+        return mariaDataSourceProperties()
+            .initializeDataSourceBuilder()
+            .build();
+    }
+
+    @Bean
+    public LocalContainerEntityManagerFactoryBean mariaEntityManagerFactory(
+        EntityManagerFactoryBuilder builder) {
+        Map<String, Object> props = new HashMap<>();
+        props.put("hibernate.hbm2ddl.auto", "update");
+        props.put("hibernate.dialect", "org.hibernate.dialect.MariaDBDialect");
+
+        return builder
+            .dataSource(mariaDataSource())
+            .packages("org.example.study1.ssr2osrmultimoduleimporter.mariadb.entity")
+            .persistenceUnit("mariadb")
+            .properties(props)
+            .build();
+    }
+
+    @Bean
+    public PlatformTransactionManager mariaTransactionManager(
+        @Qualifier("mariaEntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+}
+```
+
+PostgresJpaConfig와 구조는 동일하지만 `@Primary`가 없다. MariaDB는 보조 데이터소스이기 때문이다.
+
+**`@ConfigurationProperties(prefix = "datasource.mariadb")`**: importer yml의 `datasource.mariadb` 하위 값을 읽는다. PostgreSQL의 `spring.datasource`와 prefix가 다르다.
+
+**`.packages()`**: MariaDB 전용 엔티티는 importer의 `mariadb.entity` 패키지에 둔다. 이렇게 패키지를 분리해야 PostgreSQL 엔티티와 MariaDB 엔티티가 섞이지 않는다.
+
+## 6. 엔티티 & 리포지토리
+
+### PostgreSQL (common 모듈)
+
+```java
+// domain/Item.java
+package org.example.study1.ssr2osrmultimodulecommon.domain;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Getter @Setter @ToString @NoArgsConstructor
+@Table(name = "item", schema = "shop")
+public class Item {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private Integer price;
+    private String author;
+}
+```
+
+```java
+// repository/ItemRepository.java
+package org.example.study1.ssr2osrmultimodulecommon.repository;
+
+import org.example.study1.ssr2osrmultimodulecommon.domain.Item;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface ItemRepository extends JpaRepository<Item, Long> {
+}
+```
+
+### MariaDB (importer 모듈)
+
+```java
+// mariadb/entity/Item2.java
+package org.example.study1.ssr2osrmultimoduleimporter.mariadb.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Getter @Setter @ToString @NoArgsConstructor
+public class Item2 {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private Integer price;
+    private String author;
+}
+```
+
+```java
+// mariadb/repository/Item2Repository.java
+package org.example.study1.ssr2osrmultimoduleimporter.mariadb.repository;
+
+import org.example.study1.ssr2osrmultimoduleimporter.mariadb.entity.Item2;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface Item2Repository extends JpaRepository<Item2, Long> {
+}
+```
+
+## 7. Service & Controller
+
+### ItemService
+
+```java
+package org.example.study1.ssr2osrmultimoduleimporter.service;
+
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.example.study1.ssr2osrmultimodulecommon.domain.Item;
+import org.example.study1.ssr2osrmultimodulecommon.repository.ItemRepository;
+import org.springframework.stereotype.Service;
+
+@Service
+@RequiredArgsConstructor
+public class ItemService {
+
+    private final ItemRepository itemRepository;
+
+    public List<Item> findAll() {
+        return itemRepository.findAll();
+    }
+}
+```
+
+### ItemController
+
+```java
+package org.example.study1.ssr2osrmultimoduleimporter.controller;
+
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.example.study1.ssr2osrmultimodulecommon.domain.Item;
+import org.example.study1.ssr2osrmultimoduleimporter.mariadb.entity.Item2;
+import org.example.study1.ssr2osrmultimoduleimporter.mariadb.repository.Item2Repository;
+import org.example.study1.ssr2osrmultimoduleimporter.service.ItemService;
+import org.springframework.web.bind.annotation.*;
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping("/api")
+public class ItemController {
+
+    private final ItemService itemService;
+    private final Item2Repository item2Repository;
+
+    // PostgreSQL에서 조회
+    @GetMapping("/list")
+    public List<Item> list() {
+        return itemService.findAll();
+    }
+
+    // MariaDB에서 조회
+    @GetMapping("/list2")
+    public List<Item2> list2() {
+        return item2Repository.findAll();
+    }
+
+    // PostgreSQL → MariaDB로 데이터 복사
+    @PostMapping("/copy-to-maria")
+    public List<Item2> copyToMaria() {
+        List<Item> items = itemService.findAll();
+
+        List<Item2> item2List = items.stream().map(item -> {
+            Item2 item2 = new Item2();
+            item2.setName(item.getName());
+            item2.setPrice(item.getPrice());
+            item2.setAuthor(item.getAuthor());
+            return item2;
+        }).toList();
+
+        return item2Repository.saveAll(item2List);
+    }
+}
+```
+
+## 8. 실행 확인
+
+```bash
+./gradlew clean build -x test
+```
+
+애플리케이션을 실행하면 로그에서 두 개의 HikariPool이 생성되는 것을 확인할 수 있다.
+
+```
+HikariPool-1 - Starting...           ← MariaDB
+HikariPool-1 - Start completed.
+Database version: 12.1.2              ← MariaDB 버전
+
+HikariPool-2 - Starting...           ← PostgreSQL
+HikariPool-2 - Start completed.
+Database version: 15.10               ← PostgreSQL 버전
+
+Started Ssr2osrMultiModuleImporterApplication in 2.455 seconds
+```
+
+### API 테스트
+
+```bash
+# PostgreSQL Item 조회
+curl http://localhost:8081/api/list
+
+# MariaDB Item2 조회
+curl http://localhost:8081/api/list2
+
+# PostgreSQL → MariaDB 복사
+curl -X POST http://localhost:8081/api/copy-to-maria
+```
+
+## 삽질 포인트 정리
+
+### 1. yml 파일명 충돌
+
+멀티모듈에서 동일한 `application-prod.yml` 파일명을 쓰면 classpath에서 하나만 로딩된다. common의 파일명을 `application-prod-common.yml`로 바꾸고 importer에서 `spring.config.import`로 가져와야 한다.
+
+### 2. 자동 설정 충돌
+
+`@EnableJpaRepositories`를 수동으로 쓰면 Spring Boot의 자동 JPA 설정과 충돌한다. `DataSourceAutoConfiguration`과 `HibernateJpaAutoConfiguration`을 반드시 exclude해야 한다.
+
+### 3. EntityManagerFactoryBuilder 빈 누락
+
+`HibernateJpaAutoConfiguration`을 exclude하면 `EntityManagerFactoryBuilder`가 자동 생성되지 않는다. PostgresJpaConfig에서 `JpaVendorAdapter`와 함께 직접 빈으로 등록해야 한다.
+
+### 4. 컴포넌트 스캔 범위
+
+메인 클래스의 패키지가 `ssr2osrmultimoduleimporter`이면 기본 스캔 범위가 이 패키지 하위만이다. common의 Repository(`ssr2osrmultimodulecommon`)를 찾으려면 `scanBasePackages`로 상위 패키지를 명시해야 한다.
+
+### 5. MariaDB는 default_schema 불필요
+
+PostgreSQL은 하나의 DB 안에 여러 스키마를 나눠 쓰므로 `hibernate.default_schema`가 필요하지만, MariaDB는 DB명 자체가 스키마 역할이므로 URL의 DB명(`/mysql`)만으로 충분하다.
