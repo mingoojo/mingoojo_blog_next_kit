@@ -1,4 +1,2 @@
 #!/bin/sh
-echo "pre-commit 훅 테스트 중입니다."
-
-npx --no-install lint-staged
+npx --no-install lint-staged --allow-empty 

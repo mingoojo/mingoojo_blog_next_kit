@@ -1,0 +1,355 @@
+---
+title: '[라이브러리]Husky + lint-staged + commitlint 세팅 가이드'
+date: '2026-02-23'
+tags: ['next-js', 'husky', 'lint-staged', 'commitlint', 'library']
+draft: false
+summary: 'Next.js 프로젝트에 Husky를 도입해서 커밋 전 자동 린트, 커밋 메시지 규칙 강제, 브랜치명 기반 이슈번호 자동 삽입까지 전부 세팅해봤다.'
+authors: ['default']
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+import EnvLink from '@/components/mdxComponents/EnvLink'
+
+## Git Hook이 뭔지부터
+
+[Git Hook 공식문서](https://git-scm.com/book/ko/v2/Git맞춤-Git-Hooks)
+
+Git Hook은 Git에서 특정 이벤트가 발생할 때 **자동으로 실행되는 스크립트**다.
+쉽게 말하면 Git의 "이벤트 리스너"라고 보면 된다.
+
+```
+commit 실행 → pre-commit hook 발동 → 스크립트 실행 → 통과하면 커밋 완료
+push 실행   → pre-push hook 발동   → 스크립트 실행 → 통과하면 push 완료
+```
+
+원래 Git Hook은 `.git/hooks/` 폴더에 있다.
+`ls .git/hooks/` 해보면 `pre-commit.sample`, `commit-msg.sample` 같은 파일들이 보이는데,
+이걸 직접 수정해서 쓸 수도 있다.
+
+근데 문제가 있다.
+
+**`.git/` 폴더는 Git으로 공유가 안 된다.**
+그래서 팀원마다 hook 설정이 달라질 수 있고, 이걸 해결하기 위해 **Husky**가 나왔다.
+`.husky/` 폴더는 Git에 커밋되니까 팀 전체가 같은 hook을 공유할 수 있다.
+
+---
+
+## 설치
+
+### 1. Husky
+
+```bash
+npm install -D husky
+npx husky init
+```
+
+`npx husky init`을 실행하면 `.husky/` 디렉토리가 생성되고,
+`package.json`의 `scripts`에 `"prepare": "husky"`가 자동 추가된다.
+
+```json
+// package.json
+"scripts": {
+  "prepare": "husky"
+}
+```
+
+`prepare` 스크립트 덕분에 팀원이 `git clone` 후 `npm install`만 하면 husky가 자동으로 세팅된다.
+
+### 2. lint-staged
+
+```bash
+npm install -D lint-staged
+```
+
+lint-staged는 **git에 스테이징된 파일만** 대상으로 린트를 돌려주는 도구다.
+프로젝트 전체를 검사하면 느리니까, 변경된 파일만 골라서 검사하는 거다.
+
+`package.json`에 설정을 추가한다.
+
+```json
+// package.json
+{
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
+  }
+}
+```
+
+prettier도 같이 쓰고 싶으면:
+
+```bash
+npm install -D prettier
+```
+
+```json
+{
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{css,scss,md,json}": [
+      "prettier --write"
+    ]
+  }
+}
+```
+
+**주의:** prettier를 lint-staged에 등록해놓고 실제로 설치 안 하면
+`Error: spawn prettier ENOENT` 에러가 난다. 등록한 도구는 반드시 설치해야 한다.
+
+### 3. commitlint
+
+```bash
+npm install -D @commitlint/cli @commitlint/config-conventional
+```
+
+프로젝트 루트에 `commitlint.config.js` 생성:
+
+```js
+module.exports = {
+  extends: ['@commitlint/config-conventional'],
+  parserPreset: {
+    parserOpts: {
+      // prepare-commit-msg에서 [JIRA-123] 같은 prefix를 붙여도 통과하도록
+      headerPattern: /^(\[.+\]\s)?(\w+):\s(.+)$/,
+      headerCorrespondence: ['ticket', 'type', 'subject'],
+    },
+  },
+};
+```
+
+`@commitlint/config-conventional`이 커밋 메시지 규칙을 정의하는 패키지다.
+
+**허용되는 커밋 타입:**
+
+| 타입       | 용도                         |
+| ---------- | ---------------------------- |
+| `feat`     | 새 기능                      |
+| `fix`      | 버그 수정                    |
+| `docs`     | 문서 변경                    |
+| `style`    | 포맷팅 (코드 동작 변화 없음) |
+| `refactor` | 리팩토링                     |
+| `test`     | 테스트 추가/수정             |
+| `chore`    | 빌드, 설정 등 기타           |
+| `perf`     | 성능 개선                    |
+| `ci`       | CI 설정 변경                 |
+| `build`    | 빌드 시스템 변경             |
+| `revert`   | 이전 커밋 되돌리기           |
+
+**중요: 콜론 뒤에 공백이 필수다.**
+
+```bash
+# ✖ 틀림
+git commit -m "test:commitlint추가"
+
+# ✔ 맞음
+git commit -m "test: commitlint추가"
+```
+
+---
+
+## Hook 설정
+
+### 실행 순서
+
+```
+1. pre-commit         → 코드 검사 (lint-staged)
+2. prepare-commit-msg → 메시지 자동 수정 (이슈번호 삽입)
+3. commit-msg          → 최종 메시지 규칙 검사 (commitlint)
+4. 커밋 완료
+```
+
+### pre-commit — 커밋 전 코드 검사
+
+`.husky/pre-commit`:
+
+```sh
+#!/bin/sh
+npx lint-staged --allow-empty
+```
+
+커밋할 때마다 스테이징된 `.ts`, `.tsx` 파일에 대해 ESLint를 자동 실행한다.
+
+`--allow-empty`를 넣는 이유는, `package.json`이나 `.eslintrc.json` 같은 파일만 커밋할 때
+lint-staged가 매칭되는 파일을 못 찾으면 에러를 뱉기 때문이다.
+
+**주의할 점:** lint-staged는 **ESLint만 실행**한다. TypeScript 컴파일 에러는 잡지 않는다.
+
+```tsx
+// VS Code에서 빨간줄은 뜨지만, ESLint 규칙에 없으면 커밋은 통과된다
+const x = 1
+const x = 1  // TypeScript error: Cannot redeclare block-scoped variable 'x'
+              // 하지만 ESLint에 no-redeclare 규칙이 없으면 커밋 통과
+```
+
+이걸 잡으려면 ESLint에 규칙을 직접 추가하거나:
+
+```json
+"@typescript-eslint/no-redeclare": "error"
+```
+
+lint-staged에 `tsc` 체크를 넣을 수도 있다:
+
+```json
+"lint-staged": {
+  "*.{ts,tsx}": [
+    "eslint --fix",
+    "bash -c 'tsc --noEmit'"
+  ]
+}
+```
+
+단, `tsc --noEmit`은 **프로젝트 전체**를 타입 체크하기 때문에 커밋 속도가 느려질 수 있다.
+TypeScript 컴파일러는 파일 단위 체크가 안 되고, `tsconfig.json` 기준으로 전체를 봐야 하기 때문이다.
+보통은 ESLint 규칙 추가가 더 실용적이다.
+
+### prepare-commit-msg — 커밋 메시지 자동 수정
+
+`.husky/prepare-commit-msg`:
+
+```sh
+#!/bin/sh
+BRANCH=$(git branch --show-current)
+ISSUE=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' || true)
+if [ -n "$ISSUE" ]; then
+  sed -i.bak "1s/^/[$ISSUE] /" "$1" && rm -f "$1.bak"
+fi
+exit 0
+```
+
+브랜치명에서 이슈번호 패턴(`대문자-숫자`)을 추출해서 커밋 메시지 앞에 자동으로 붙여준다.
+
+**각 줄의 의미:**
+
+```sh
+BRANCH=$(git branch --show-current)
+# 현재 브랜치명을 가져온다. 예: "JIRA-123-login-feature"
+
+ISSUE=$(echo "$BRANCH" | grep -oE '[A-Z]+-[0-9]+' || true)
+# 브랜치명에서 "대문자-숫자" 패턴 추출. 예: "JIRA-123"
+# grep -o: 매칭된 부분만 출력
+# grep -E: 정규표현식 사용
+# || true: 패턴 못 찾아도 에러 없이 넘어감
+
+if [ -n "$ISSUE" ]; then
+# ISSUE가 비어있지 않으면 (-n = not empty)
+
+  sed -i.bak "1s/^/[$ISSUE] /" "$1" && rm -f "$1.bak"
+  # 커밋 메시지 첫 줄 앞에 "[JIRA-123] " 삽입
+  # .bak은 macOS의 sed가 -i 옵션에 백업 확장자를 요구해서 임시로 만들고 바로 삭제
+
+fi
+
+exit 0
+# 무조건 성공으로 종료 — 에러 나도 커밋을 막지 않음
+```
+
+**동작 예시:**
+
+```
+브랜치: JIRA-123-login-feature
+입력:   git commit -m "feat: 로그인 추가"
+결과:   "[JIRA-123] feat: 로그인 추가"
+
+브랜치: main
+입력:   git commit -m "feat: 로그인 추가"
+결과:   "feat: 로그인 추가" (패턴 없으므로 그대로)
+
+브랜치: jmg_branch
+입력:   git commit -m "fix: 버그 수정"
+결과:   "fix: 버그 수정" (대문자-숫자 패턴 없으므로 그대로)
+```
+
+### commit-msg — 커밋 메시지 규칙 검사
+
+`.husky/commit-msg`:
+
+```sh
+#!/bin/sh
+npx --no -- commitlint --edit $1
+```
+
+`prepare-commit-msg`에서 메시지가 수정된 후, 최종 메시지를 commitlint로 검사한다.
+
+<EnvLink path="/blog/react/[라이브러리]Husky#3-commitlint">타입: 메시지</EnvLink> 형식이 아니면 커밋을 차단한다.
+
+```bash
+git commit -m "test"
+# ✖ subject may not be empty [subject-empty]
+# ✖ type may not be empty [type-empty]
+
+git commit -m "feat: 로그인 기능 추가"
+# ✔ 통과
+```
+
+**`prepare-commit-msg`와 `commit-msg`의 충돌 문제:**
+
+`prepare-commit-msg`가 `[JIRA-123]`을 앞에 붙이면
+기본 commitlint 설정은 `[JIRA-123] feat: 로그인`을 파싱하지 못한다.
+
+그래서 `commitlint.config.js`에서 `parserPreset`을 설정해서
+`[이슈번호] 타입: 메시지` 형식도 허용하도록 해야 한다. <EnvLink path="/blog/react/[라이브러리]Husky#3-commitlint">(위의 설치 섹션 참고)</EnvLink>
+
+### post-merge — merge/pull 후 자동 실행
+
+`.husky/post-merge`:
+
+```sh
+#!/bin/sh
+npm install
+```
+
+다른 팀원이 패키지를 추가하고 push한 걸 pull 받으면
+자동으로 `npm install`이 실행돼서 의존성이 동기화된다.
+
+### post-checkout — 브랜치 전환 후 실행
+
+`.husky/post-checkout`:
+
+```sh
+#!/bin/sh
+npm install
+```
+
+브랜치마다 의존성이 다를 수 있으니,
+브랜치 전환할 때마다 자동으로 `npm install`을 실행한다.
+
+---
+
+## 최종 프로젝트 구조
+
+```
+your-nextjs-app/
+├── .husky/
+│   ├── pre-commit            # lint-staged 실행
+│   ├── prepare-commit-msg    # 이슈번호 자동 삽입
+│   ├── commit-msg            # commitlint 검사
+│   ├── post-merge            # npm install
+│   └── post-checkout         # npm install
+├── commitlint.config.js
+├── .eslintrc.json
+├── package.json              # lint-staged 설정 포함
+└── ...
+```
+
+---
+
+## VS Code에서 커밋할 때
+
+VS Code의 소스 제어 패널에서 커밋하면 터미널 로그가 따로 안 보인다.
+`Cmd + Shift + U`로 **출력(Output)** 패널을 열고 드롭다운에서 **"Git"**을 선택하면 확인할 수 있다.
+에러로 커밋이 실패하면 자동으로 알림이 뜨고, **"Open Git Log"** 버튼이 나온다.
+
+---
+
+## 마치며
+
+Husky가 해주는 걸 한마디로 정리하면:
+
+> **"Git 이벤트에 자동화 스크립트를 걸어서, 팀 전체가 같은 규칙으로 코드를 관리하는 방법"**
+
+실무에서는 `pre-commit` + `commit-msg` + `pre-push` 이 세 가지면 충분하다.
+나머지 hook은 필요할 때 하나씩 추가하면 된다.
