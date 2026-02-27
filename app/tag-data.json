@@ -1,9 +1,11 @@
 {
-  "next-js": 4,
+  "next-js": 5,
+  "cross-env": 1,
+  "react": 4,
+  "library": 3,
   "husky": 1,
   "lint-staged": 1,
   "commitlint": 1,
-  "library": 2,
   "python": 1,
   "automation": 1,
   "contentlayer": 2,
@@ -17,8 +19,8 @@
   "sqld": 10,
   "git": 1,
   "redis": 1,
-  "markdown": 1,
   "javascript": 1,
   "typescript": 1,
+  "markdown": 1,
   "용어설명": 2
 }

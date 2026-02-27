@@ -6,7 +6,6 @@ import Link from './Link'
 import MobileNav from './MobileNav'
 import ThemeSwitch from './ThemeSwitch'
 import SearchButton from './SearchButton'
-import { useTheme } from 'next-themes'
 import { usePathname } from 'next/navigation'
 
 const Header = () => {
@@ -14,11 +13,7 @@ const Header = () => {
   if (siteMetadata.stickyNav) {
     headerClass += ' sticky top-0 z-50'
   }
-
-  const { theme, setTheme, resolvedTheme } = useTheme()
   const pathname = usePathname()
-
-
 
   return (
     <header className={headerClass}>
@@ -42,26 +37,25 @@ const Header = () => {
           {headerNavLinks
             .filter((link) => link.href !== '/')
             .map((link) => {
-
               if (link.href === '/blog') {
                 if (pathname.startsWith('/tags') || pathname.startsWith('/blog')) {
                   return (
                     <Link
                       key={link.title}
                       href={link.href}
-                      className={"m-1 font-medium text-primary-500 dark:text-primary-400"}>
+                      className={'m-1 font-medium text-primary-500 dark:text-primary-400'}>
                       {link.title}
                     </Link>
                   )
                 }
               }
               if (link.href === '/projects' || link.href === '/about') {
-                if (`/${pathname.split("/")[1]}` === link.href) {
+                if (`/${pathname.split('/')[1]}` === link.href) {
                   return (
                     <Link
                       key={link.title}
                       href={link.href}
-                      className={"m-1 font-medium text-primary-500 dark:text-primary-400"}>
+                      className={'m-1 font-medium text-primary-500 dark:text-primary-400'}>
                       {link.title}
                     </Link>
                   )

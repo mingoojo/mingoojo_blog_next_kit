@@ -1,0 +1,804 @@
+---
+title: '[라이브러리]Cross-env 사용법'
+date: '2026-02-26'
+tags: ['next-js', 'Cross-env', 'react', 'library']
+draft: false
+summary: '번들러별 .env 로딩 구조부터, cross-env가 실제로 하는 일, dotenv와의 차이까지 전부 파헤쳐봤다.'
+authors: ['default']
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+## 먼저 알아야 할 것 — .env 파일은 누가 읽는가
+
+[Cross-env 공식문서](https://github.com/kentcdodds/cross-env)
+
+cross-env를 설명하기 전에, 먼저 헷갈리기 쉬운 개념부터 잡고 가자.
+
+> 스크립트에서 `cross-env NODE_ENV=production`을 하면 `.env.production`을 가져다 쓰는 거 아냐?
+
+**아니다.**
+
+cross-env는 `process.env.NODE_ENV`에 문자열 `production`을 넣는 것이 전부다.
+`.env.production` 파일을 읽는 건 cross-env가 하는 일이 아니다.
+
+그러면 `.env.production`은 누가 읽나?
+**React도 아니다.** React는 그냥 UI 라이브러리일 뿐이다.
+
+`.env` 파일을 자동으로 로드해주는 건 **번들러/빌드 도구** 쪽이다.
+어떤 도구를 쓰느냐에 따라 `.env` 로딩 방식이 완전히 달라진다.
+
+---
+
+## 번들러/프레임워크별 .env 로딩 방식
+
+### Next.js
+
+Next.js는 `NODE_ENV`를 **자동으로 설정**한다.
+그리고 그 값을 보고 어떤 `.env` 파일을 로드할지 스스로 결정한다.
+
+```bash
+next dev    → NODE_ENV = "development"  자동 설정
+next build  → NODE_ENV = "production"   자동 설정
+next start  → NODE_ENV = "production"   자동 설정
+```
+
+```
+cross-env NODE_ENV=production next build
+│
+├── cross-env가 하는 일
+│   └── process.env.NODE_ENV = "production" 설정  ← 여기까지만
+│
+└── Next.js가 하는 일
+    ├── NODE_ENV 값을 확인 → "production"이네?
+    ├── .env 로드
+    ├── .env.local 로드
+    ├── .env.production 로드        ← 이걸 해주는 건 Next.js
+    └── .env.production.local 로드
+```
+
+즉 Next.js를 쓸 때는 **`NODE_ENV` 설정 목적으로 cross-env가 필요 없다.**
+Next.js가 `next dev`, `next build` 명령어에 따라 알아서 설정해주기 때문이다.
+
+로딩 순서는 아래로 갈수록 우선순위가 높다.
+
+```
+NODE_ENV = "production"일 때
+1. .env                       ← 모든 환경 공통
+2. .env.local                 ← 로컬 오버라이드 (gitignore 대상)
+3. .env.production            ← production 전용
+4. .env.production.local      ← production 로컬 오버라이드
+
+NODE_ENV = "development"일 때
+1. .env
+2. .env.local
+3. .env.development
+4. .env.development.local
+```
+
+중요한 건 **4개 중 하나만 읽는 게 아니라, 전부 다 읽는다**는 거다.
+순서대로 전부 로드하고, 같은 변수가 있으면 나중에 읽힌 게 덮어쓴다.
+
+```bash
+# .env
+NEXT_PUBLIC_API_URL=aaa
+NEXT_PUBLIC_SITE_NAME=MyApp
+
+# .env.local
+NEXT_PUBLIC_API_URL=bbb
+DB_PASS=secret
+
+# .env.production
+NEXT_PUBLIC_API_URL=ccc
+NEXT_PUBLIC_GA_ID=G-PROD
+
+# .env.production.local
+NEXT_PUBLIC_API_URL=ddd
+```
+
+```
+로딩 순서대로 merge (같은 변수는 나중에 읽힌 게 승리)
+
+1. .env                    → API_URL=aaa, SITE_NAME=MyApp
+2. .env.local              → API_URL=bbb, DB_PASS=secret        (aaa → bbb)
+3. .env.production         → API_URL=ccc, GA_ID=G-PROD          (bbb → ccc)
+4. .env.production.local   → API_URL=ddd                         (ccc → ddd)
+
+최종 결과:
+NEXT_PUBLIC_API_URL=ddd       ← .env.production.local이 최종 승리
+NEXT_PUBLIC_SITE_NAME=MyApp   ← .env에서 설정, 이후 덮어쓴 곳 없음
+DB_PASS=secret                ← .env.local에서 설정
+NEXT_PUBLIC_GA_ID=G-PROD      ← .env.production에서 설정
+```
+
+즉 **전부 merge한 다음, 겹치는 건 마지막에 읽힌 파일이 이기는 구조**다.
+그래서 `.env`에는 공통 값, `.env.production`에는 환경별 값,
+`.env.local`에는 시크릿을 넣는 식으로 계층을 나눠서 관리하면 된다.
+
+### CRA (Create React App)
+
+CRA도 내부적으로 `react-scripts`가 dotenv를 사용해서
+Next.js와 거의 동일하게 동작한다. `NODE_ENV`도 자동 설정된다.
+
+```bash
+react-scripts start  → NODE_ENV = "development"  → .env.development 로드
+react-scripts build  → NODE_ENV = "production"   → .env.production 로드
+react-scripts test   → NODE_ENV = "test"         → .env.test 로드
+```
+
+CRA에서 환경 변수를 클라이언트에 노출하려면 `REACT_APP_` 접두사가 필요하다.
+
+```bash
+# .env.production
+REACT_APP_API_URL=https://api.example.com    # ✅ 클라이언트에서 접근 가능
+SECRET_KEY=abc123                             # ❌ 접두사 없으면 번들에 포함 안 됨
+```
+
+### Vite
+
+Vite도 `.env` 파일 로딩을 자체 내장하고 있다.
+다만 Next.js, CRA와 다른 점이 좀 있다.
+
+```bash
+# NODE_ENV가 아니고 MODE를 사용
+vite dev     → MODE = "development"  → .env.development 로드
+vite build   → MODE = "production"   → .env.production 로드
+```
+
+Vite는 `NODE_ENV`가 아니라 **`MODE`** 값을 기준으로 `.env` 파일을 결정한다.
+그리고 클라이언트 노출 접두사가 `VITE_`다.
+
+```bash
+# .env.production
+VITE_API_URL=https://api.example.com    # ✅ 클라이언트에서 접근 가능
+DB_PASSWORD=secret                       # ❌ VITE_ 접두사 없으면 노출 안 됨
+```
+
+```ts
+// 코드에서 접근
+console.log(import.meta.env.VITE_API_URL)    // Vite 방식
+console.log(import.meta.env.MODE)            // "production" | "development"
+```
+
+### 직접 Webpack 구성
+
+Webpack을 직접 구성하면? **아무도 `.env` 파일을 안 읽어준다.**
+전부 직접 세팅해야 한다.
+
+```bash
+# .env 파일이 있어도 자동으로 안 읽힘
+# dotenv를 직접 설치하고 설정해야 함
+npm install dotenv dotenv-webpack
+```
+
+```js
+// webpack.config.js
+const Dotenv = require('dotenv-webpack')
+
+module.exports = {
+  plugins: [
+    new Dotenv({
+      path: `./.env.${process.env.NODE_ENV}`,  // 직접 경로 지정해야 함
+    }),
+  ],
+}
+```
+
+### 정리
+
+|                    | NODE_ENV 자동 설정 | .env 자동 로딩 | 클라이언트 접두사 |
+| ------------------ | :----------------: | :------------: | :---------------: |
+| **Next.js**        |         ✅         |       ✅       |  `NEXT_PUBLIC_`   |
+| **CRA**            |         ✅         |       ✅       |   `REACT_APP_`    |
+| **Vite**           |   ✅ (MODE 기준)   |       ✅       |      `VITE_`      |
+| **Webpack (직접)** |         ❌         |       ❌       |     직접 설정     |
+
+핵심:** `.env.production`을 자동으로 읽어주는 건 React의 기능이 아니라
+CRA, Vite, Next.js 같은 **빌드 도구의 기능\*\*이다.
+직접 Webpack을 구성하면 본인이 전부 세팅해야 한다.
+
+---
+
+## 그러면 Cross-env는 뭘 하는 건데?
+
+한 줄로 표현하면 **"OS에 관계없이 환경 변수를 동일한 문법으로 인라인 설정할 수 있게 해주는 CLI 도구"** 다.
+
+### 왜 필요한가 — OS별 환경 변수 문법 차이
+
+환경 변수를 설정하는 방식 자체가 OS마다 다르다.
+
+```bash
+# macOS / Linux (POSIX)
+  "scripts": {
+    "build:analyze": "ANALYZE=true next build next build",
+  },
+# 변수 참조: $ANALYZE
+
+# Windows CMD
+  "scripts": {
+    "build:analyze": "set ANALYZE=true && next build",
+  },
+# 변수 참조: %ANALYZE%
+
+# Windows PowerShell
+  "scripts": {
+    "build:analyze": "$env:ANALYZE="true"; next build",
+  },
+# 변수 참조: $env:ANALYZE
+```
+
+문제는 `package.json`의 `scripts`는 **하나의 문법**으로밖에 못 쓴다는 거다.
+팀원 중 한 명이 Windows를 쓰면? CI 서버가 Linux면?
+스크립트를 OS별로 따로 만들어야 하는 상황이 온다.
+
+이걸 해결하는 게 cross-env다.
+POSIX 문법으로 통일해서 쓰면, cross-env가 내부적으로 현재 OS에 맞게 알아서 변환해준다.
+
+```bash
+# ❌ 이렇게 쓰면 macOS/Linux에서만 동작
+"scripts": {
+  "build:analyze": "ANALYZE=true next build"
+}
+
+# ✅ cross-env를 쓰면 어디서든 동작
+"scripts": {
+  "build:analyze": "cross-env ANALYZE=true next build"
+}
+```
+
+---
+
+## 설치
+
+```bash
+npm install --save-dev cross-env
+```
+
+> **주의:** Version 8부터는 Node.js 20 이상만 지원한다.
+> Node.js 18 이하를 쓴다면 `npm install --save-dev cross-env@7`로 설치해야 한다.
+
+```
+cross-env@7
+├── Node.js 10.14 이상 지원
+└── 현재 대부분의 프로젝트에서 사용 중
+
+cross-env@8
+├── Node.js 20 이상만 지원
+├── TypeScript로 재작성
+└── ESM 기반
+```
+
+설치할 때 **패키지 이름 오타를 반드시 주의**해야 한다.
+과거에 `crossenv` (하이픈 없는 버전)라는 악성 패키지가 npm에 올라온 적이 있어서,
+반드시 `cross-env` (하이픈 포함)으로 설치해야 한다.
+
+---
+
+## 기본 사용법
+
+### 1. package.json scripts에 추가
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:analyze": "cross-env ANALYZE=true next build",
+    "build:debug": "cross-env NEXT_PUBLIC_DEBUG=true next build"
+  }
+}
+```
+
+이게 전부다. 명령어 앞에 `cross-env 변수명=값`만 붙이면 된다.
+
+실제로 실행되는 명령어는 이렇게 분리된다.
+
+```
+cross-env ANALYZE=true next build
+
+→ 환경 변수: ANALYZE=true  (process.env에 주입)
+→ 실행 명령: next build  (cross-spawn으로 실행)
+```
+
+### 2. 여러 환경 변수 동시 설정
+
+```json
+{
+  "scripts": {
+    "build:staging": "cross-env NEXT_PUBLIC_APP_ENV=staging NEXT_PUBLIC_DEBUG=true next build"
+  }
+}
+```
+
+`KEY=VALUE` 형태를 여러 개 나열하면 된다.
+cross-env는 `=`이 포함된 인자를 환경 변수로 인식하고,
+첫 번째로 `=`이 없는 인자부터를 실행할 명령어로 인식한다.
+
+### 3. 코드에서 환경 변수 읽기
+
+설정한 환경 변수는 `process.env`로 접근한다.
+
+```js
+// next.config.js
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+  // cross-env ANALYZE=true next build 로 실행할 때만 번들 분석 활성화
+})
+
+module.exports = withBundleAnalyzer({})
+```
+
+```tsx
+// app/page.tsx — NEXT_PUBLIC_ 접두사가 붙은 변수는 클라이언트에서도 접근 가능
+export default function Home() {
+  const isDebug = process.env.NEXT_PUBLIC_DEBUG === 'true'
+
+  return (
+    <div>
+      {isDebug && <p>디버그 모드 활성화</p>}
+    </div>
+  )
+}
+```
+
+---
+
+## 잠깐, 그거 .env에 넣으면 되는 거 아냐?
+
+여기까지 읽으면 이런 생각이 들 수 있다.
+
+```json
+// 이렇게 cross-env로 API URL을 넣는 거랑
+{
+  "scripts": {
+    "dev": "cross-env NEXT_PUBLIC_API_URL=http://localhost:4000 next dev",
+    "build": "cross-env NEXT_PUBLIC_API_URL=https://api.example.com next build"
+  }
+}
+```
+
+```bash
+# 이렇게 .env 파일에 넣는 거랑 뭐가 다른데?
+# .env.development
+NEXT_PUBLIC_API_URL=http://localhost:4000
+
+# .env.production
+NEXT_PUBLIC_API_URL=https://api.example.com
+```
+
+**결론부터 말하면, 똑같이 동작한다. 그리고 .env 파일에 넣는 게 맞다.**
+
+API URL, GA ID, 사이트 이름처럼 **환경별로 값이 고정되어 있는 변수**는
+`.env.development`, `.env.production` 파일에 넣는 게 정석이다.
+cross-env로 스크립트에 직접 쓸 이유가 없다.
+
+그러면 **cross-env는 대체 언제 쓰나?**
+
+`.env` 파일에 넣기 애매한, **빌드할 때만 임시로 켜고 끄는 플래그** 같은 것들이다.
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:analyze": "cross-env ANALYZE=true next build",
+    "build:debug": "cross-env NEXT_PUBLIC_DEBUG=true next build"
+  }
+}
+```
+
+`ANALYZE=true`는 번들 분석할 때만 한 번씩 쓰는 거다.
+이걸 `.env` 파일에 넣으면 매번 주석 처리하거나 지워야 해서 오히려 귀찮아진다.
+
+판단 기준을 정리하면 이렇다.
+
+```
+환경별 고정 값 (API URL, GA ID 등)     → .env 파일에 넣기
+임시 플래그 (ANALYZE, DEBUG 등)         → cross-env로 인라인 주입
+```
+
+---
+
+## cross-env vs dotenv — 뭐가 다른가
+
+둘 다 환경 변수를 다루지만, **어디서 값을 가져오느냐**가 완전히 다르다.
+
+```
+cross-env
+├── 환경 변수를 "직접 인라인으로" 설정
+├── package.json scripts에서 사용
+└── 실행 시점: 명령어 실행 전
+
+dotenv
+├── 환경 변수를 ".env 파일에서 읽어서" 설정
+├── 코드 안에서 사용
+└── 실행 시점: 앱 런타임
+```
+
+핵심 차이를 정리하면 이렇다.
+
+| 구분              | cross-env             | dotenv                       |
+| ----------------- | --------------------- | ---------------------------- |
+| 값 저장 위치      | package.json 안       | .env 파일                    |
+| 변수 1~2개        | ✅ 깔끔               | 굳이?                        |
+| 변수 10개 이상    | 한 줄이 지옥          | ✅ 파일로 관리               |
+| 시크릿 (API키 등) | ❌ git에 노출됨       | ✅ .gitignore 가능           |
+| OS 호환           | ✅ 크로스 플랫폼      | OS 상관없음 (파일이니까)     |
+| 환경별 분리       | 스크립트 여러 개 필요 | .env.production 등 파일 분리 |
+
+다만 Next.js에서는 `.env` 파일을 자동으로 읽어주기 때문에 **dotenv 자체가 필요 없다.**
+그래서 Next.js 기준으로 보면 이렇게 된다.
+
+```
+.env 파일     → API URL, GA ID, DB URL 같은 환경별 고정 값 (Next.js가 자동 로드)
+.env.local    → DB 비밀번호, API 키 같은 시크릿 (.gitignore 대상)
+cross-env     → ANALYZE, DEBUG 같은 임시 플래그 (빌드 시점에만 켜고 끔)
+```
+
+한 줄로 정리하면, **cross-env는 "변수를 직접 치는 것"**, **dotenv는 "파일에서 읽어오는 것"** 이다.
+
+---
+
+## 그러면 Next.js, CRA에서 cross-env는 언제 쓰나?
+
+앞에서 봤듯이 Next.js, CRA는 `NODE_ENV`를 자동으로 설정하고,
+`.env` 파일도 자동으로 로드해준다.
+API URL 같은 환경별 고정 값도 `.env` 파일에 넣으면 끝이다.
+
+그러면 cross-env는 왜 쓰나?
+**`.env` 파일에 넣기 애매한, 빌드 시점에만 임시로 켜는 플래그를 주입할 때** 쓴다.
+
+```json
+// Next.js
+{
+  "scripts": {
+    "build": "next build",
+    "build:analyze": "cross-env ANALYZE=true next build",
+    "build:debug": "cross-env NEXT_PUBLIC_DEBUG=true next build",
+    "build:standalone": "cross-env NEXT_OUTPUT=standalone next build"
+  }
+}
+```
+
+```json
+// CRA
+{
+  "scripts": {
+    "build": "react-scripts build",
+    "build:profile": "cross-env GENERATE_SOURCEMAP=true react-scripts build"
+  }
+}
+```
+
+```json
+// Vite
+{
+  "scripts": {
+    "build": "vite build",
+    "build:analyze": "cross-env ANALYZE=true vite build"
+  }
+}
+```
+
+이런 플래그들은 매번 쓰는 게 아니라 **필요할 때만 한 번씩** 쓰기 때문에
+`.env` 파일에 넣으면 오히려 관리가 귀찮아진다.
+
+---
+
+## 내부 동작 원리
+
+cross-env가 어떻게 동작하는지 단계별로 파헤쳐봤다.
+
+### 전체 파이프라인
+
+```
+1. 인자 파싱
+   process.argv에서 KEY=VALUE 형태를 환경 변수로 분리
+   나머지를 실행할 명령어 + 인자로 분리
+
+2. 환경 변수 변환
+   Windows에서 $VAR → %VAR% 변환
+   값에 포함된 환경 변수 참조도 OS에 맞게 치환
+
+3. process.env 병합
+   기존 process.env에 새 환경 변수를 merge
+   기존 값이 있으면 덮어씀
+
+4. 명령어 실행
+   cross-env → cross-spawn으로 자식 프로세스 생성
+   cross-env-shell → Node.js spawn의 shell 옵션으로 실행
+
+5. 종료 코드 전달
+   자식 프로세스의 exit code를 그대로 부모에 전달
+   CI/CD에서 빌드 실패 감지가 정상 동작하도록 보장
+```
+
+### 핵심 의존성 — cross-spawn
+
+cross-env의 유일한 런타임 의존성은 **cross-spawn**이다.
+
+```json
+//node_modules/cross-env/package.json을 보면
+{
+  "dependencies": {
+    "cross-spawn": "^7.0.1"
+  }
+}
+```
+
+Node.js의 `child_process.spawn`은 Windows에서 여러 문제가 있다.
+`.cmd`, `.bat` 파일을 제대로 못 찾거나, 인자에 따옴표가 들어가면 깨지는 등.
+cross-spawn은 이런 Windows 특유의 문제를 전부 처리해주는 `spawn` 대체 모듈이다.
+
+```ts
+// 내부적으로 이런 식으로 동작한다 (단순화)
+import crossSpawn from 'cross-spawn'
+
+function crossEnv(args) {
+  const { envVars, command, commandArgs } = parseArgs(args)
+
+  // 기존 환경 변수에 새 변수 merge
+  const env = { ...process.env, ...envVars }
+
+  // cross-spawn으로 명령어 실행
+  const child = crossSpawn(command, commandArgs, {
+    stdio: 'inherit',
+    env,
+  })
+
+  child.on('exit', (exitCode) => {
+    process.exit(exitCode)
+  })
+}
+```
+
+### 파일 구조
+
+```
+cross-env/
+├── src/
+│   ├── bin/
+│   │   ├── cross-env.js          ← cross-env 바이너리 진입점
+│   │   └── cross-env-shell.js    ← cross-env-shell 바이너리 진입점
+│   ├── index.js                  ← 핵심 로직 (인자 파싱 + spawn)
+│   ├── command.js                ← 환경 변수 파싱 로직
+│   └── variable.js               ← $VAR 치환 로직
+└── package.json
+```
+
+---
+
+## cross-env vs cross-env-shell — 뭐가 다른가
+
+cross-env 모듈은 두 개의 바이너리를 제공한다.
+
+```
+cross-env
+├── cross-spawn으로 명령어 실행
+├── 단일 명령어 실행에 적합
+└── 쉘 특수문자 해석 안 함
+
+cross-env-shell
+├── Node.js spawn의 shell: true 옵션 사용
+├── 인라인 쉘 스크립트 전체에 환경 변수 적용
+└── &&, ||, $VAR 같은 쉘 문법 해석 가능
+```
+
+### 언제 뭘 써야 하나
+
+```json
+// ✅ 단일 명령어 — cross-env 사용
+{
+  "scripts": {
+    "build:analyze": "cross-env ANALYZE=true next build"
+  }
+}
+
+// ✅ 여러 명령어 연결, 쉘 문법 필요 — cross-env-shell 사용
+{
+  "scripts": {
+    "build:start": "cross-env-shell NEXT_PUBLIC_DEBUG=true \"next build && next start\""
+  }
+}
+```
+
+판단 기준은 간단하다.
+
+> 쉘 특수문자(`&&`, `||`, `$VAR`, `>` 등)를 해석해야 하면 `cross-env-shell`,
+> 아니면 `cross-env`.
+
+Windows에서 **SIGINT 시그널**(Ctrl + C)을 잡아야 하는 경우에도
+`cross-env-shell`을 써야 한다. `cross-env`는 cross-spawn을 써서
+프로세스를 생성하는데, 이 방식은 Windows에서 시그널 전파가 안 될 수 있다.
+
+---
+
+## 실전 패턴들
+
+### 1. next.config.js에서 플래그 분기 처리
+
+cross-env로 주입한 임시 플래그를 `next.config.js`에서 활용하는 패턴이다.
+
+```json
+{
+  "scripts": {
+    "build": "next build",
+    "build:analyze": "cross-env ANALYZE=true next build",
+    "build:standalone": "cross-env NEXT_OUTPUT=standalone next build"
+  }
+}
+```
+
+```js
+// next.config.js
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+})
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: process.env.NEXT_OUTPUT === 'standalone' ? 'standalone' : undefined,
+}
+
+module.exports = withBundleAnalyzer(nextConfig)
+```
+
+`ANALYZE`도 `NEXT_OUTPUT`도 `.env`에 넣을 필요가 없다.
+번들 분석할 때, Docker 빌드할 때만 임시로 켜는 플래그니까.
+
+### 2. 환경 변수 분리 — parentScript / childScript 패턴
+
+플래그가 여러 개 붙어서 한 줄이 길어질 때 유용하다.
+
+```json
+{
+  "scripts": {
+    "build:analyze:standalone": "cross-env ANALYZE=true NEXT_OUTPUT=standalone npm run build:base",
+    "build:debug": "cross-env NEXT_PUBLIC_DEBUG=true npm run build:base",
+    "build:base": "next build"
+  }
+}
+```
+
+`build:base`는 실제 빌드 명령어만 가지고 있고,
+나머지 스크립트는 플래그만 설정한 다음 `build:base`를 호출한다.
+환경 변수는 자식 스크립트까지 자동 전파된다.
+
+### 3. .env 파일과 cross-env의 올바른 역할 분담
+
+Next.js 프로젝트에서 가장 깔끔한 구조는 이렇다.
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "build:analyze": "cross-env ANALYZE=true next build"
+  }
+}
+```
+
+```bash
+# .env (모든 환경 공통)
+NEXT_PUBLIC_SITE_NAME=MyApp
+
+# .env.development (next dev 시 자동 로드)
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_GA_ID=G-DEV456
+DATABASE_URL=postgresql://localhost:5432/myapp
+
+# .env.production (next build 시 자동 로드)
+NEXT_PUBLIC_API_URL=https://api.example.com
+NEXT_PUBLIC_GA_ID=G-PROD123
+DATABASE_URL=postgresql://prod-db:5432/myapp
+
+# .env.local (git에 올리면 안 되는 시크릿)
+SECRET_KEY=sk-abc123
+```
+
+```tsx
+// app/layout.tsx
+export default function RootLayout({ children }) {
+  const gaId = process.env.NEXT_PUBLIC_GA_ID  // .env 파일에서 자동 로드된 값
+
+  return (
+    <html>
+      <body>
+        {gaId && <Analytics gaId={gaId} />}
+        {children}
+      </body>
+    </html>
+  )
+}
+```
+
+이 구조에서 각자 맡는 역할은 이렇다.
+
+```
+.env 파일     → API URL, GA ID 같은 환경별 고정 값 (Next.js가 자동 로드)
+.env.local    → DB 비밀번호, API 키 같은 시크릿 (.gitignore 대상)
+cross-env     → ANALYZE, DEBUG 같은 임시 플래그 (빌드할 때만 켜고 끔)
+```
+
+---
+
+## 환경 변수 참조와 이스케이프
+
+### $VAR 참조
+
+cross-env는 환경 변수 값 안에서 `$VAR` 참조를 OS에 맞게 변환해준다.
+Windows에서는 원래 `%VAR%` 문법을 써야 하지만,
+cross-env를 쓰면 POSIX 스타일 (`$VAR`)로 통일해서 쓸 수 있다.
+
+```json
+{
+  "scripts": {
+    "echo-path": "cross-env-shell \"echo $PATH\""
+  }
+}
+```
+
+### 이스케이프 — 치환을 막고 싶을 때
+
+`$` 앞에 홀수 개의 백슬래시를 붙이면 치환되지 않는다.
+
+```json
+{
+  "scripts": {
+    "no-replace": "cross-env FOO=\\$BAR next build"
+  }
+}
+// FOO의 값은 문자열 "$BAR" 그대로
+```
+
+```json
+{
+  "scripts": {
+    "yes-replace": "cross-env FOO=\\\\$BAR next build"
+  }
+}
+// FOO의 값은 BAR 환경 변수의 실제 값으로 치환됨
+```
+
+---
+
+## 프로젝트 현재 상태 — "Done" 선언
+
+cross-env의 제작자 **Kent C. Dodds**는 2020년에 cross-env를 **"finished"** 상태로 선언했다.
+이후 2025년 11월에 GitHub 저장소가 **아카이브(read-only)** 됐다.
+
+> "cross-env는 5년 전에 만들었고, 의도한 문제를 잘 해결하고 있다.
+> 새 기능은 필요 없고, 심각한 버그만 수정할 것이다."
+
+즉 **"더 이상 개발할 게 없어서 멈춘 것"** 이지, 버려진 프로젝트가 아니다.
+주간 다운로드 수가 1,100만 이상으로, npm 생태계에서 핵심 패키지 수준이다.
+
+```
+cross-env 프로젝트 현황
+├── 상태: 메인터넌스 모드 (2025년 아카이브)
+├── 주간 다운로드: ~11,000,000+
+├── GitHub Stars: 6,500+
+├── 보안 취약점: 0건
+└── 유일한 의존성: cross-spawn
+```
+
+---
+
+## 마치며
+
+cross-env를 이해하려면 **이것부터 구분해야 한다.**
+
+```
+.env 파일 로딩      → 프레임워크/번들러의 몫 (Next.js, CRA, Vite)
+환경별 고정 값       → .env.production, .env.development에 넣기
+임시 플래그 주입     → cross-env의 몫 (ANALYZE, DEBUG 등)
+파일 기반 변수 로딩  → dotenv의 몫 (프레임워크 없을 때)
+```
+
+cross-env를 쓰는 이유를 한마디로 정리하면:
+
+> **"package.json scripts에서 임시 환경 변수를 OS 걱정 없이 주입하는 가장 검증된 방법"**
+
+사용법도 `cross-env 변수=값 명령어` 한 줄이면 끝이라 진입 장벽이 거의 없다.
+다만 API URL 같은 환경별 고정 값은 `.env` 파일에 넣는 게 맞고,
+cross-env는 `ANALYZE=true`처럼 **한 번씩 켜고 끄는 용도**로 쓰는 게 정석이다.
