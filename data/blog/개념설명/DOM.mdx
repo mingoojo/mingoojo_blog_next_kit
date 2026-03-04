@@ -1,0 +1,338 @@
+---
+title: 'DOM(Document Object Model)이 뭔데?'
+date: '2026-03-04'
+tags: ['javascript', '개념정리', 'DOM', 'browser', 'rendering']
+draft: false
+summary: 'HTML이 DOM이 되는 과정, 브라우저가 화면을 그리는 방법, JS로 DOM을 조작했을 때 실제로 무슨 일이 일어나는지 전부 파헤쳐봤다.'
+authors: ['default']
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+## DOM이란 무엇인가
+
+**DOM(Document Object Model)** 은 HTML 문서를 브라우저와 JS가 다룰 수 있도록 **트리 구조의 객체로 변환한 것**이다.
+
+HTML 파일은 그냥 텍스트(문자열)다. 브라우저는 이 문자열을 그대로 이해하지 못한다.
+그래서 브라우저가 HTML을 **파싱(Parsing)** 해서 JS가 접근하고 조작할 수 있는 객체 트리로 변환한다. 이게 DOM이다.
+
+```
+HTML 텍스트 → [파싱] → DOM (객체 트리) → [렌더링] → 화면
+```
+
+ <ImageWithCaption
+
+           src="/static/images/dom.png"
+           alt="DOM"
+           caption="HTML을 DOM으로 변경하는 과정"
+
+      />
+
+> **파싱(Parsing)** : 문자열을 분석해서 구조화된 데이터로 변환하는 과정.
+> 소스코드를 기계어로 바꾸는 **컴파일(Compile)** 과는 다르다.
+
+---
+
+## HTML이 DOM이 되는 과정
+
+브라우저는 서버에서 HTML을 받으면 위에서부터 한 줄씩 읽으며 4단계를 거친다.
+
+### 1단계 — 바이트 → 문자열
+
+서버에서 받은 건 사실 바이트(0101...)다.
+이걸 `utf-8` 같은 인코딩 방식에 따라 사람이 읽을 수 있는 문자열로 변환한다.
+
+### 2단계 — 토큰화 (Tokenization)
+
+문자열을 의미 있는 단위(토큰)로 잘라낸다.
+
+```
+"<div>"  → 시작 태그 토큰
+"안녕"   → 텍스트 토큰
+"</div>" → 종료 태그 토큰
+```
+
+### 3단계 — 노드 생성
+
+토큰 하나하나를 객체(노드)로 만든다.
+
+```
+시작 태그 토큰 → Element 노드
+텍스트 토큰   → Text 노드
+```
+
+### 4단계 — 트리 연결
+
+노드들을 부모-자식 관계로 연결해서 트리를 완성한다. 이게 DOM 트리다.
+
+```html
+<div id="box">
+  <h1>안녕</h1>
+  <p>반갑습니다</p>
+</div>
+```
+
+위 HTML이 파싱되면 메모리에 이런 객체 트리가 생긴다.
+
+```
+document
+└── html
+    ├── head
+    └── body
+        └── div#box
+            ├── h1 ("안녕")
+            └── p ("반갑습니다")
+```
+
+JS 입장에서는 이렇게 생긴 객체다.
+
+```js
+{
+  type: 'div',
+  id: 'box',
+  children: [
+    { type: 'h1', textContent: '안녕', children: [] },
+    { type: 'p', textContent: '반갑습니다', children: [] }
+  ]
+}
+```
+
+HTML은 그냥 텍스트라 `<h1>` 안에 뭐가 있는지 JS가 알 방법이 없다.
+객체로 변환되어야 키로 접근하고 값을 바꾸는 게 가능해진다.
+
+> **중요:** 브라우저가 화면을 그리는 기준은 HTML 파일이 아니라 **DOM 트리**다.
+> JS로 DOM을 바꾸면 화면이 바뀌는 이유가 이것이다.
+
+---
+
+## 브라우저 렌더링 과정
+
+DOM이 만들어졌다고 바로 화면에 그려지는 게 아니다. 몇 단계를 더 거친다.
+
+```
+① HTML 파싱   → DOM 트리 생성
+② CSS 파싱   → CSSOM 트리 생성
+③ DOM + CSSOM → 렌더 트리 (Render Tree) 생성
+④ 레이아웃   → 각 요소의 위치, 크기 계산
+⑤ 페인트     → 픽셀로 그림
+⑥ 컴포지팅   → 레이어 합성 → 화면 출력
+```
+
+**① DOM 트리 생성**
+HTML을 파싱해서 노드 객체들의 트리를 만든다.
+
+**② CSSOM 트리 생성**
+CSS도 똑같이 파싱해서 스타일 정보를 트리로 만든다. DOM과 별도로 존재한다.
+
+**③ 렌더 트리 생성**
+DOM + CSSOM을 합쳐서 실제로 화면에 보일 요소들만 추린 트리를 만든다.
+`display: none`처럼 숨겨진 요소는 여기서 제외된다.
+
+**④ 레이아웃**
+각 노드가 화면 어디에, 얼마나 크게 그려질지 계산한다.
+
+**⑤ 페인트**
+계산된 정보를 바탕으로 실제 픽셀을 그린다.
+
+**⑥ 컴포지팅**
+여러 레이어를 합쳐서 최종 화면을 출력한다.
+
+---
+
+## DOM 조작 — JS로 DOM을 바꾸는 방법
+
+### 노드 접근
+
+```js
+document.getElementById('box')          // id로 접근
+document.querySelector('.title')         // CSS 선택자 (첫 번째만)
+document.querySelectorAll('li')          // CSS 선택자 (전부)
+document.getElementsByClassName('item') // class로 접근
+```
+
+### 내용 변경
+
+```js
+el.textContent = '텍스트만 변경';           // 텍스트만 바꿀 때 (안전)
+el.innerHTML = '<b>HTML째로 변경</b>';       // HTML 자체를 바꿀 때 (XSS 주의)
+```
+
+### 속성 변경
+
+```js
+el.setAttribute('class', 'active');
+el.getAttribute('id');
+el.removeAttribute('disabled');
+
+// class는 classList가 편하다
+el.classList.add('active');
+el.classList.remove('active');
+el.classList.toggle('active');
+```
+
+### 노드 추가/삭제
+
+```js
+const newEl = document.createElement('div');
+newEl.textContent = '새 요소';
+parent.appendChild(newEl);              // 맨 끝에 추가
+parent.removeChild(newEl);             // 삭제
+parent.insertBefore(newEl, targetEl);  // 특정 위치 앞에 삽입
+```
+
+### 이벤트
+
+```js
+el.addEventListener('click', () => {
+  console.log('클릭됨!');
+});
+```
+
+---
+
+## DOM 조작 이후 — 리플로우와 리페인트
+
+JS가 DOM을 바꾸면 브라우저는 변경사항을 감지하고 화면을 다시 그린다.
+전체를 다시 그리는 게 아니라 **변경된 부분만** 처리한다. 두 가지 경우가 있다.
+
+### 리플로우 (Reflow)
+
+레이아웃에 영향을 주는 변경이 일어날 때 발생한다.
+레이아웃 단계부터 다시 계산하기 때문에 **비용이 크다.**
+
+```js
+el.style.width = '200px';   // 크기 변경 → 리플로우
+el.style.margin = '10px';   // 위치 변경 → 리플로우
+el.remove();                // 구조 변경 → 리플로우
+```
+
+### 리페인트 (Repaint)
+
+레이아웃엔 영향 없고 시각적 변경만 있을 때 발생한다.
+페인트 단계만 다시 실행하므로 **리플로우보다 가볍다.**
+
+```js
+el.style.color = 'red';              // 색상 변경 → 리페인트
+el.style.backgroundColor = 'blue';  // 배경색 변경 → 리페인트
+```
+
+> 리플로우가 일어나면 리페인트도 항상 함께 일어난다. 반대는 아니다.
+
+| 구분         | 원인                  | 비용 |
+| ------------ | --------------------- | ---- |
+| **리플로우** | 크기, 위치, 구조 변경 | 크다 |
+| **리페인트** | 색상 등 시각적 변경만 | 작다 |
+
+---
+
+## 실제 흐름 — AJAX + DOM 조작 예시
+
+버튼을 누르면 AJAX로 데이터를 받아와서 화면에 반영하는 시나리오다.
+
+```html
+<div id="result">초기값</div>
+<button id="btn">데이터 불러오기</button>
+```
+
+```js
+let data = '초기값';
+
+document.getElementById('btn').addEventListener('click', () => {
+  fetch('/api/data')
+    .then(res => res.json())
+    .then(json => {
+      data = json.value;                                      // ① 변수 업데이트
+      document.getElementById('result').textContent = data;  // ② DOM 변경
+    });
+});
+```
+
+각 단계에서 실제로 일어나는 일은 이렇다.
+
+```
+버튼 클릭
+    ↓
+click 이벤트 감지 → 콜백 실행
+    ↓
+AJAX 요청 (백그라운드, 페이지는 그대로 유지)
+    ↓
+서버 응답 → { value: "새 데이터" }
+    ↓
+① data = "새 데이터"  ← JS 메모리만 바뀜, 화면 변화 없음
+    ↓
+② DOM의 textContent 변경  ← 이 순간 DOM이 바뀜
+    ↓
+브라우저가 변경 감지 → div#result 부분만 리페인트
+    ↓
+화면에 "새 데이터" 출력
+```
+
+여기서 핵심은 이것이다.
+
+> **변수를 바꾼다고 화면이 바뀌는 게 아니다.**
+> DOM을 직접 건드려야 화면이 바뀐다.
+> 변수는 JS 메모리 안의 값일 뿐이다.
+
+---
+
+## Virtual DOM이 나온 이유
+
+DOM 조작은 리플로우/리페인트를 유발하기 때문에 많이 하면 성능이 떨어진다.
+
+```js
+// 리스트 100개 추가 → 리플로우 100번 발생
+for (let i = 0; i < 100; i++) {
+  const li = document.createElement('li');
+  ul.appendChild(li);
+}
+```
+
+**Virtual DOM**은 실제 DOM과 똑같이 생긴 가상의 복사본을 메모리에 만들어둔다.
+
+```
+변경사항을 Virtual DOM에 먼저 적용
+    ↓
+실제 DOM과 비교 (diffing)
+    ↓
+다른 부분만 실제 DOM에 한 번에 반영
+```
+
+React가 이 방식을 쓴다.
+변경사항을 한 번에 모아서 실제 DOM엔 최소한으로만 건드리기 때문에
+리플로우/리페인트 횟수가 줄어들고 성능이 개선된다.
+
+---
+
+## 새로고침하면 어떻게 되나
+
+DOM은 **메모리 위에 올라간 작업본**이다. 원본 HTML 파일과는 별개다.
+
+```
+새로고침
+    ↓
+메모리의 DOM 전부 삭제
+    ↓
+HTML 파일 다시 파싱
+    ↓
+새 DOM 생성
+```
+
+JS로 아무리 DOM을 바꿔도 새로고침하면 원래대로 돌아오는 이유가 이것이다.
+변경사항을 유지하려면 서버 DB나 `localStorage` 같은 곳에 저장해야 한다.
+
+---
+
+## 핵심 정리
+
+| 개념            | 설명                                                  |
+| --------------- | ----------------------------------------------------- |
+| **DOM**         | HTML을 파싱해서 만든 객체 트리. JS가 조작 가능한 형태 |
+| **파싱**        | HTML 텍스트 → 객체 트리로 변환하는 과정               |
+| **CSSOM**       | CSS를 파싱해서 만든 스타일 트리                       |
+| **렌더 트리**   | DOM + CSSOM을 합친 실제 렌더링용 트리                 |
+| **리플로우**    | 레이아웃 재계산. 크기/위치/구조 변경 시 발생. 비용 큼 |
+| **리페인트**    | 시각적 요소만 다시 그림. 비용 작음                    |
+| **Virtual DOM** | 실제 DOM 조작을 최소화하기 위한 React의 최적화 기법   |
+
+브라우저 입장에서 화면의 진짜 설계도는 **HTML이 아니라 DOM**이다.
+HTML은 DOM을 만들기 위한 재료일 뿐이고, 그 이후엔 DOM이 독립적으로 움직인다.
