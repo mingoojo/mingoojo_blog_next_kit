@@ -60,6 +60,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const basePath = process.env.BASE_PATH || ''
+  console.log(process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION)
 
   return (
     <html
@@ -69,7 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta
           name="google-site-verification"
-          content="gOS_mfTzRLkTAArYn-V8jfnZGUlQW3CLqLZNvu7Pk_c"
+          content={process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION}
         />
         <link
           rel="apple-touch-icon"
