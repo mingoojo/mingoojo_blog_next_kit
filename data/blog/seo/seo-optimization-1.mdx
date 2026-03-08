@@ -1,0 +1,264 @@
+---
+title: '블로그 SEO 최적화 전략'
+date: '2026-02-28'
+tags: ['next-js', 'react', 'seo']
+draft: false
+summary: '블로그의 seo를 최적화하기 위한 방법 및 결과 비교'
+authors: ['default']
+# 검색 순위는 그 이후 글의 품질과 키워드로 결정 이거또 작업할 필요 있음
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+import EnvLink from '@/components/mdxComponents/EnvLink'
+
+## 왜 SEO가 필요한가
+
+블로그를 만들고 Vercel에 배포했는데 들어오는 사람이 전혀 없었다.
+분석 도구를 켜봐도 트래픽이 0에 가까웠다.
+
+원인은 단순했다. **구글이 내 블로그의 존재를 몰랐다.**
+
+구글은 웹을 크롤링해서 검색 결과에 올리는데, 새로 만든 블로그는 구글이 발견하기까지
+몇 달씩 걸릴 수 있다. SEO 최적화는 구글이 내 블로그를 빠르게 발견하고,
+검색 결과 상위에 노출되도록 하는 작업이다.
+
+---
+
+## 1단계 — Google Search Console 등록
+
+가장 먼저 해야 할 것은 구글에 내 블로그를 직접 알려주는 거다.
+
+> **Google Search Console** = "구글아, 내 블로그 여기 있어" 라고 신청하는 창구
+
+### 소유권 인증
+
+```
+1. https://search.google.com/search-console 접속
+2. URL 접두어에 블로그 주소 입력
+3. HTML 태그 방식으로 인증
+```
+
+HTML 태그 방식을 선택하면 이런 태그를 준다.
+
+```html
+<meta name="google-site-verification" content="YOUR_CODE" />
+```
+
+Next.js App Router에서는 `layout.tsx`의 `metadata`에 추가하면 된다.
+
+```tsx
+// app/layout.tsx
+export const metadata: Metadata = {
+  verification: {
+    google: 'YOUR_CODE',
+  },
+}
+```
+
+배포 후 서치콘솔에서 **확인** 버튼을 누르면 소유권 인증이 완료된다.
+
+---
+
+## 2단계 — Sitemap 설정
+
+Sitemap은 내 블로그의 모든 페이지 목록을 XML 형태로 구글에 알려주는 파일이다.
+없어도 구글이 크롤링하면서 자연스럽게 발견하긴 하는데, 있으면 훨씬 빠르다.
+
+### next-sitemap 설치
+
+```bash
+npm install next-sitemap
+```
+
+### 설정 파일 생성
+
+루트에 `next-sitemap.config.js` 파일을 만든다.
+
+```js
+// next-sitemap.config.js
+module.exports = {
+  siteUrl: 'https://내블로그주소.vercel.app',
+  generateRobotsTxt: true,
+}
+```
+
+### package.json에 postbuild 추가
+
+```json
+"scripts": {
+  "postbuild": "next-sitemap"
+}
+```
+
+`postbuild`는 `next build` 완료 후 자동으로 실행된다.
+배포 후 `/sitemap.xml` 접속해서 XML이 보이면 성공이다.
+
+### 주의할 점
+
+`siteMetadata.js`의 `siteUrl`도 반드시 실제 블로그 주소로 맞춰야 한다.
+
+```js
+// data/siteMetadata.js
+const siteMetadata = {
+  siteUrl: 'https://내블로그주소.vercel.app',  // ← 여기
+  ...
+}
+```
+
+이게 기본값인 `tailwind-nextjs-starter-blog.vercel.app`으로 되어 있으면
+sitemap의 URL이 전부 잘못된 주소로 생성된다.
+
+---
+
+## 3단계 — Next.js Metadata 설정
+
+Next.js App Router에서는 `metadata` 객체로 SEO 관련 태그를 관리한다.
+
+### 기본 메타데이터
+
+```tsx
+// app/layout.tsx
+export const metadata: Metadata = {
+  title: {
+    default: "내 블로그",
+    template: "%s | 내 블로그",  // 각 페이지 제목이 "페이지명 | 내 블로그" 형태로
+  },
+  description: "블로그 설명",
+  openGraph: {
+    title: "내 블로그",
+    description: "블로그 설명",
+    url: "https://내블로그주소.vercel.app",
+    siteName: "내 블로그",
+    locale: "ko_KR",
+    type: "website",
+  },
+}
+```
+
+### 각 블로그 글의 동적 메타데이터
+
+```tsx
+// app/blog/[...slug]/page.tsx
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string[] }>
+}): Promise<Metadata> {
+  const { slug } = await params
+  const post = allBlogs.find((p) => p.slug === slug.join('/'))
+
+  if (!post) return {}
+
+  return {
+    title: post.title,
+    description: post.summary,
+    openGraph: {
+      title: post.title,
+      description: post.summary,
+      type: 'article',
+      publishedTime: post.date,
+      authors: post.authors,
+    },
+  }
+}
+```
+
+글마다 제목과 설명이 다르게 설정되어 구글 검색 결과에 올바른 정보가 표시된다.
+
+---
+
+## SEO에 영향을 주는 것들
+
+### URL 구조
+
+URL에 한글이나 특수문자가 들어가면 SEO에 불리하다.
+
+```
+❌ /blog/react/[라이브러리]Contentlayer
+❌ /blog/코딩테스트/1. [JAVA] 프로그래머스 문제 001
+✅ /blog/react/contentlayer-guide
+✅ /blog/algorithm/java-programmers-001
+```
+
+구글이 특수문자 URL을 파싱하는 데 어려움을 겪을 수 있고,
+링크 공유할 때도 인코딩되어 보기 흉해진다.
+
+### 글 제목 (제일 중요)
+
+사람들이 구글에 실제로 검색하는 키워드로 제목을 잡아야 한다.
+
+```
+❌ [라이브러리]Contentlayer 사용법
+❌ [개념정리]process.env 완전 정복
+
+✅ Next.js Contentlayer2 설정 방법 완벽 가이드
+✅ Next.js process.env 브라우저에서 undefined 뜨는 이유와 해결법
+✅ Husky lint-staged commitlint Next.js 프로젝트 세팅 방법
+```
+
+### 도메인
+
+`vercel.app` 같은 무료 서브도메인보다 개인 도메인이 SEO 신뢰도가 높다.
+단, 도메인을 바꾸면 기존 SEO 점수가 인계되지 않는다.
+
+기존 도메인에서 새 도메인으로 이전할 때는 **301 리다이렉트**를 설정해야 한다.
+
+```json
+// vercel.json
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "https://새도메인.com/$1",
+      "permanent": true
+    }
+  ]
+}
+```
+
+`permanent: true`가 301 리다이렉트를 의미하고, 기존 SEO 점수를 새 도메인으로 넘겨준다.
+
+---
+
+## SEO 결과 확인
+
+구글에 이렇게 검색하면 인덱싱된 페이지 목록을 확인할 수 있다.
+
+```
+site:내블로그주소.vercel.app
+```
+
+처음에는 아무것도 안 뜨지만, 며칠 후에 글들이 하나씩 뜨기 시작한다.
+
+서치콘솔의 **실적 탭**에서 클릭수와 노출수도 확인할 수 있다.
+노출수가 올라오고 있으면 SEO가 되고 있다는 신호다.
+
+---
+
+## 현실적인 기대치
+
+```
+구글 인덱싱 반영 : 1일 ~ 2주
+검색 결과 노출   : 1개월 ~ 3개월
+검색 순위 상승   : 3개월 ~ 6개월
+```
+
+SEO는 단기전이 아니다. 꾸준히 글을 올리면서 기다리는 게 맞다.
+단기 트래픽이 필요하면 개발 커뮤니티 디스코드나 오픈카카오방에 글을 공유하는 게 가장 빠르다.
+
+---
+
+## 마치며
+
+정리하면 순서는 이렇다.
+
+```
+1. Google Search Console 소유권 인증
+2. siteMetadata.js siteUrl 수정
+3. next-sitemap으로 sitemap.xml 생성 후 제출
+4. 글 제목을 검색 키워드 기반으로 작성
+5. URL 영문화
+6. 1~3개월 기다리면서 꾸준히 글 올리기
+```
+
+다음 글에서는 실제 노출수와 클릭수가 어떻게 변화했는지 데이터로 비교해볼 예정이다.
