@@ -11,6 +11,7 @@ import Footer from '@/components/Footer'
 import siteMetadata from '@/data/siteMetadata'
 import { ThemeProviders } from './theme-providers'
 import { Metadata } from 'next'
+import { Analytics as VercelAnalytics } from '@vercel/analytics/react' // ✅ 추가
 
 const space_grotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -60,7 +61,6 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const basePath = process.env.BASE_PATH || ''
-  console.log(process.env.NEXT_PUBLIC_GOOGLE_VERIFICATION)
 
   return (
     <html
@@ -150,6 +150,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Footer />
           </SectionContainer>
         </ThemeProviders>
+        <VercelAnalytics />
       </body>
     </html>
   )
