@@ -7,6 +7,8 @@ export const metadata = genPageMetadata({ title: 'Projects' })
 
 export default function Projects() {
   const sortedCoreContents = allCoreContent(sortPosts(allProjects))
+
+  console.log(sortedCoreContents)
   return (
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -26,6 +28,7 @@ export default function Projects() {
                 title={d.title}
                 description={d.summary || ''}
                 href={`/${d.path}`}
+                imgSrc={d.images?.[0]}
               />
             ))}
           </div>

@@ -1,0 +1,374 @@
+---
+title: '2026 CrossFit Open 기록 카드 생성기'
+date: '2026-03-18'
+tags: ['Project', 'Next.js', 'React', 'TypeScript', 'Vercel']
+draft: false
+summary: 2026 CrossFit Open 기록을 입력하면 인스타그램 스토리 사이즈(1080×1920)의 
+  카드 이미지를 생성해주는 웹 서비스이다. 전체 참가자 데이터를 기반으로 내 순위와 
+  상위 퍼센타일을 자동 계산하고, 5가지 테마와 사진 배경을 지원하며 PNG로 다운로드할 수 있다.
+images: ['/static/images/crossfit_open_2026_style11.png']
+---
+
+import ImageWithCaption from '@/components/mdxComponents/ImageWithCaption'
+
+_Title_: 2026 CrossFit Open Record Card Creator
+
+_Author_: MINGOO JO
+
+_Source_: [Project Git](https://github.com/mingoojo/crossfit_open)
+
+_Live_: [crossfit-open.vercel.app](https://crossfit-open.vercel.app)
+
+## 📖 Introduction
+
+[crossfit-games web](https://games.crossfit.com/leaderboard/open/2026)
+
+<ImageWithCaption src="/static/images/crossfitgames_web.png" alt="crossfit games web" caption="크로스핏 게임즈 리더보드" />
+매년 CrossFit Open 시즌이 끝나면 자신의 기록을 SNS에 공유하는 문화가 있다.
+하지만 공식 사이트에서 제공하는 결과 페이지는 참가를 하지 않았다면 내 기록을 찾아보기가 쉽지 않다.
+
+이 프로젝트는 **내 CrossFit Open 기록을 입력하면 내 등수를 확인해게 도와준다.
+또한 인스타그램 스토리 사이즈(1080×1920)의 카드 이미지를 자동 생성**해주는 웹 서비스이다.
+전체 참가자 데이터(`athletes.json`)를 기반으로 WOD별 순위와 상위 퍼센타일을 직접 계산하고,
+5가지 디자인 테마와 사진 배경을 지원하며, PNG 파일로 다운로드할 수 있다.
+
+---
+
+## 📂 프로젝트 구조
+
+```
+crossfit_open/
+├─ public/
+│   ├─ data/
+│   │   ├─ athletes.json        # 남성 참가자 데이터 (전처리 완료)
+│   │   └─ athletes2.json       # 여성 참가자 데이터 (전처리 완료)
+│   └─ images/
+│       ├─ OpenLogo_black.png
+│       └─ OpenLogo_white.png
+└─ src/
+    ├─ app/
+    │   ├─ crossfit/
+    │   │   ├─ page.tsx          # 메인 페이지
+    │   │   └─ crossfit.module.css
+    │   ├─ layout.tsx
+    │   ├─ globals.css
+    │   └─ page.tsx              # / → /crossfit redirect
+    ├─ components/
+    │   ├─ CrossfitCard.tsx      # 카드 렌더링 (5가지 테마)
+    │   ├─ CrossfitCard.module.css
+    │   ├─ CrossfitForm.tsx      # 입력 폼
+    │   └─ CrossfitForm.module.css
+    ├─ hooks/
+    │   └─ useCardScale.ts       # 카드 동적 스케일 계산
+    ├─ lib/
+    │   └─ calcRank.ts           # 순위 계산 로직
+    └─ types/
+        └─ crossfit.ts           # 타입 정의
+```
+
+---
+
+## 🚀 기술 스택
+
+### Frontend
+
+- **Next.js 13** (App Router)
+- **TypeScript**
+- **CSS Modules** : 컴포넌트 단위 스타일 관리
+- **react-imask** : MM:SS 형식 시간 입력 마스킹
+- **html2canvas** : DOM을 캔버스로 변환하여 PNG 저장
+- **Google Fonts** : Bebas Neue, Barlow Condensed, IBM Plex Sans KR
+
+### 데이터 처리
+
+- **Python** : CrossFit Open 공식 API 크롤링 → `athletes.json` 생성
+- 원본 212MB → 필요한 필드만 추출하여 약 19MB로 경량화
+
+### 인프라
+
+- **Vercel** : 배포 및 호스팅
+- **Vercel Analytics** : 페이지 뷰, 방문자 분석
+- **GitHub** : 소스 관리 (Git LFS로 대용량 JSON 관리)
+
+---
+
+## ⚙️ 핵심 기능
+
+### 1. 순위 자동 계산
+
+CrossFit Open의 공식 점수 계산 방식을 그대로 구현했다.
+
+```typescript
+// score = reps * 10000 + 남은시간(초)
+// 완주한 경우 남은시간이 클수록 높은 점수
+// 미완주한 경우 elapsed = timecap (남은시간 = 0)
+export function calcScore(reps: number, elapsedSeconds: number, timecap: number): number {
+  const remaining = Math.max(0, timecap - elapsedSeconds)
+  return reps * 10000 + remaining
+}
+```
+
+WOD별로 내 점수보다 높은 참가자 수를 세어 순위를 계산하고,
+3개 WOD 순위의 합산(`overallScore`)으로 종합 순위를 결정한다.
+
+```typescript
+// WOD별 순위
+const wodRank = athletes.filter(
+  a => getAthleteScore(a, cfg.ordinal) > myScore
+).length + 1
+
+// 종합 순위: overallScore 합산이 낮을수록 높은 순위
+const overallRank = athletes.filter(
+  a => getOverallScore(a) < overallMyScore
+).length + 1
+```
+
+성별에 따라 다른 데이터셋을 사용한다.
+
+- **남성**: `athletes.json` (126,966명)
+- **여성**: `athletes2.json` (105,959명)
+
+### 2. 1080×1920 카드 생성
+
+카드는 고정 크기(1080×1920px)로 렌더링하고, 화면에는 `CSS transform scale()`로 축소해서 보여준다.
+`ResizeObserver`를 활용해 컨테이너 크기 변화에 반응하여 스케일을 동적으로 계산한다.
+
+<ImageWithCaption src="/static/images/crossfit_open_2026_style11_web.png" alt="record card" caption="기록카드" />
+
+```typescript
+// useCardScale.ts
+const calc = () => {
+  const { clientWidth: cw, clientHeight: ch } = wrapperRef.current
+  const scaleX = (cw - 48) / 1080
+  const scaleY = (ch - 48) / 1920
+  setScale(Math.min(scaleX, scaleY))
+}
+const ro = new ResizeObserver(calc)
+```
+
+이미지 저장 시에는 `scale()`을 일시적으로 제거하고 `html2canvas`로 풀 해상도(1080×1920) 캡처 후 PNG 다운로드한다.
+
+```typescript
+// scale 제거 → 풀 해상도 캡처
+wrapper.style.transform = "none"
+const canvas = await html2canvas(cardRef.current, {
+  width: 1080, height: 1920, scale: 1,
+  useCORS: true, backgroundColor: "#080808",
+})
+wrapper.style.transform = prev
+```
+
+### 3. 5가지 디자인 테마
+
+CSS Custom Properties(`var()`)를 활용해 테마 전환을 구현했다.
+카드 컴포넌트 하나에 `THEMES` 객체로 색상 값만 교체한다.
+
+<ImageWithCaption src="/static/images/crossfit_open_2026_style_themes.png" alt="record card theme" caption="기록 카트 테마" />
+
+| #   | 이름        | 배경      | 포인트 색           |
+| --- | ----------- | --------- | ------------------- |
+| 1   | Dark Fire   | #080808   | 오렌지 (#ff4500)    |
+| 2   | White Clean | #f7f5f2   | 블랙 (#111111)      |
+| 3   | Navy        | #070e1c   | 시안 (#00d4ff)      |
+| 4   | Forest      | #050e08   | 네온 그린 (#00e676) |
+| 5   | My Photo    | 사진 배경 | 화이트              |
+
+### 4. 사진 배경 (Variant 5)
+
+사용자가 직접 업로드한 사진을 카드 배경으로 사용한다.
+클릭 업로드와 드래그앤드롭을 모두 지원한다.
+
+<ImageWithCaption src="/static/images/crossfit_open_2026_phto_web.png" alt="photo card" caption="기록 포토카드" />
+
+```tsx
+// object URL 생성
+const url = URL.createObjectURL(file)
+setBgImage(url)
+
+// 카드에서 배경 + 오버레이 레이어
+<div style={{ backgroundImage: `url(${bgImage})`, backgroundSize: "cover" }} />
+<div style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.75) 100%)" }} />
+```
+
+사진 배경 테마는 상단/하단에 그라디언트 오버레이를 적용해 텍스트 가독성을 확보하고,
+중앙은 사람이 보일 수 있도록 투명하게 유지한다.
+
+### 5. 반응형 레이아웃
+
+데스크탑과 모바일에서 완전히 다른 레이아웃을 적용했다.
+
+- **데스크탑** (769px 이상): 좌측 입력 폼 + 우측 카드 프리뷰 분할 레이아웃
+- **모바일** (768px 이하): 입력 / 미리보기 탭 전환 방식, 하단 고정 버튼
+
+```css
+@media (max-width: 768px) {
+  .formPanel { display: none; }
+  .previewPanel { display: none; }
+  .mobileTabs { display: flex; }
+  .mobileTabContent { display: flex; }
+  .mobileFooter { display: flex; }
+}
+```
+
+모바일에서 계산 완료 시 자동으로 미리보기 탭으로 전환된다.
+
+---
+
+## 🔢 데이터 전처리
+
+CrossFit Open 공식 API를 Python으로 크롤링하여 `athletes_man.json`(223MB), `athletes_woman.json`(186MB)을 수집했다.
+이 파일을 그대로 쓰면 GitHub 100MB 제한과 클라이언트 로딩 시간 문제가 발생하므로,
+순위 계산에 필요한 필드만 추출하여 경량화했다.
+
+```python
+# reduce.py
+slim = []
+for a in athletes:
+    slim.append({
+        "overallScore": a.get("overallScore", ""),
+        "scores": [
+            {
+                "ordinal": s["ordinal"],
+                "score":   s["score"],
+                "valid":   s["valid"],
+            }
+            for s in a.get("scores", [])
+            if s.get("valid") == "1"
+        ]
+    })
+
+# 공백 제거로 최소화
+json.dump(slim, f, separators=(",", ":"))
+```
+
+| 파일                | 원본  | 전처리 후 |
+| ------------------- | ----- | --------- |
+| athletes_man.json   | 223MB | 19MB      |
+| athletes_woman.json | 186MB | 16MB      |
+
+---
+
+## 📐 입력 폼 설계
+
+<ImageWithCaption src="/static/images/crossfit_open_2026_form_web.png" alt="crossfit record input form" caption="기록 입력 폼" />
+
+### 시간 입력 마스킹
+
+시간 입력에 `react-imask`를 사용해 `MM:SS` 형식으로 강제했다.
+reps가 최대치 미만이면 타임캡으로 자동 처리되므로 시간 입력 필드는 비활성화된다.
+
+```tsx
+<IMaskInput
+  mask="m`:`s"
+  blocks={{
+    m: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
+    s: { mask: IMask.MaskedRange, from: 0, to: 59, maxLength: 2 },
+  }}
+  onAccept={(val) => {
+    const elapsed = parseTime(val)
+    if (elapsed > cfg.timecap) {
+      setWod(key, { time: timecapStr }) // 타임캡 초과 시 고정
+    } else {
+      setWod(key, { time: val })
+    }
+  }}
+  disabled={!isFinished}
+/>
+```
+
+### WOD 설정
+
+```typescript
+export const WOD_CONFIGS = [
+  { ordinal: 1, id: "26.1", name: "Wall Balls & Box Jumps",
+    timecap: 720,  maxReps: 354 },
+  { ordinal: 2, id: "26.2", name: "DB Lunge · Snatch · Gymnastics",
+    timecap: 900,  maxReps: 132 },
+  { ordinal: 3, id: "26.3", name: "Burpees & Cleans / Thrusters",
+    timecap: 960,  maxReps: 288 },
+]
+```
+
+---
+
+## 🚧 트러블슈팅
+
+### 1. html2canvas 스케일 문제
+
+카드에 `transform: scale()` 이 적용된 상태로 html2canvas를 실행하면
+축소된 크기로 캡처되는 문제가 있었다.
+
+**원인**: html2canvas는 DOM의 실제 렌더링 크기를 기준으로 캡처하는데,
+`scale(0.24)` 상태에서 캡처하면 1080×1920이 아닌 259×461 크기로 저장된다.
+
+**해결**: 캡처 직전에 scale이 걸린 **부모 div**의 transform을 제거하고,
+캡처 완료 후 복원하는 방식으로 해결했다.
+
+```typescript
+const wrapper = wrapperScaleRef.current
+const prev = wrapper.style.transform
+wrapper.style.transform = "none"      // 캡처 전 제거
+const canvas = await html2canvas(cardRef.current, { width: 1080, height: 1920 })
+wrapper.style.transform = prev        // 캡처 후 복원
+```
+
+### 2. GitHub 100MB 파일 제한
+
+전처리 후에도 19MB/16MB라 Git LFS 없이 올릴 수 있었지만,
+전처리 전 원본 파일(223MB)을 실수로 커밋했다.
+
+```bash
+# 히스토리에서 완전 제거
+git filter-branch --force --index-filter \
+  "git rm --cached --ignore-unmatch public/data/athletes.json" \
+  --prune-empty --tag-name-filter cat -- --all
+
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+git push origin main --force
+```
+
+### 3. body 기본 margin 문제
+
+브라우저 기본 스타일(`body { margin: 8px }`)이 카드 외곽 흰 테두리로 보이는 문제가 있었다.
+`globals.css`에 reset을 추가해서 해결했다.
+
+```css
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; }
+```
+
+### 4. flex item min-width 문제
+
+`flex: 1` 을 준 input들이 서로 겹치는 문제가 있었다.
+flex item의 기본값인 `min-width: auto` 때문에 내용물 크기 이하로 줄어들지 않아서 발생했다.
+
+```css
+.field {
+  flex: 1;
+  min-width: 0; /* overflow 방지 */
+}
+```
+
+---
+
+## 📊 Vercel Analytics
+
+<ImageWithCaption src="/static/images/Vercel_Analytics.png" alt="Vercel Analytics" caption="Vercel 분석모니터링" />
+
+Vercel Analytics를 적용해 방문자 수, 페이지뷰, 접속 디바이스 등을 모니터링하고 있다.
+모바일 접속 비율을 확인하기 위해 도입했으며, 이를 기반으로 모바일 반응형 레이아웃을 추가로 구현했다.
+
+---
+
+## ✍️ 배운 점
+
+- **html2canvas** 를 활용한 DOM → PNG 변환 패턴. `transform` 상태 관리가 핵심이었다.
+- **ResizeObserver** 를 활용한 동적 스케일 계산. `useCardScale` hook으로 추상화했다.
+- **CSS Custom Properties** 로 테마 시스템 구현. 컴포넌트 하나로 여러 테마를 관리할 수 있었다.
+- **대용량 JSON 전처리** 의 중요성. 223MB → 19MB로 줄이는 것만으로 UX가 크게 개선되었다.
+- **Git 히스토리 정리** (`filter-branch`, `gc --aggressive`). 한 번 커밋된 대용량 파일을 지우는 작업이 생각보다 까다로웠다.
+- **반응형 레이아웃** 설계. 데스크탑과 모바일을 완전히 다른 레이아웃으로 분리하는 접근법을 선택했다.
+- **flex `min-width: 0`** 패턴. flex item이 overflow될 때 거의 항상 이 문제였다.
+
+---
