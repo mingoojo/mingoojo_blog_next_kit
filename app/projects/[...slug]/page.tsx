@@ -21,8 +21,6 @@ export default async function page(props: { params: Promise<{ slug: string[] }> 
 
   const sortedCoreContents = allCoreContent(sortPosts(allProjects))
 
-  console.log(sortedCoreContents)
-
   const postIndex = sortedCoreContents.findIndex((p) => p.slug === slug)
   if (postIndex === -1) {
     return notFound()
@@ -45,9 +43,6 @@ export default async function page(props: { params: Promise<{ slug: string[] }> 
   })
 
   const Layout = layouts[post.layout || defaultLayout]
-
-  console.log(sortedCoreContents)
-  // Filter out drafts in production
 
   return (
     <>

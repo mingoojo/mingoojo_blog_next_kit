@@ -30,6 +30,8 @@ public/sitemap.xml
 # search
 /public/search.json
 
+Server.mdx
+
 # misc
 .DS_Store
 

@@ -8,7 +8,6 @@ export const metadata = genPageMetadata({ title: 'Projects' })
 export default function Projects() {
   const sortedCoreContents = allCoreContent(sortPosts(allProjects))
 
-  console.log(sortedCoreContents)
   return (
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
