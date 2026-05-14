@@ -1,6 +1,13 @@
 {
-  "next-js": 8,
-  "react": 7,
+  "vite": 2,
+  "typescript": 2,
+  "react": 8,
+  "eslint": 1,
+  "prettier": 1,
+  "web": 1,
+  "pwa": 1,
+  "manifest": 1,
+  "next-js": 9,
   "seo": 2,
   "javascript": 2,
   "개념정리": 1,
@@ -8,7 +15,6 @@
   "browser": 1,
   "rendering": 1,
   "express": 1,
-  "vite": 1,
   "env": 1,
   "cross-env": 1,
   "library": 3,
@@ -29,6 +35,5 @@
   "git": 1,
   "redis": 1,
   "markdown": 1,
-  "typescript": 1,
   "용어설명": 2
 }
