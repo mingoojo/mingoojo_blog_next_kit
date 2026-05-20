@@ -14,7 +14,7 @@ const compat = new FlatCompat({
 
 const config = [
   {
-    ignores: ['data/**'],
+    ignores: ['playground/**'],
   },
   js.configs.recommended,
   ...compat.extends(

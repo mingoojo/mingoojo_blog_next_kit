@@ -186,6 +186,7 @@ export const Authors = defineDocumentType(() => ({
 
 export default makeSource({
   contentDirPath: 'data', //데이터 폴더를 읽겠다는 설정
+  disableImportAliasWarning: true,
   documentTypes: [Blog, Authors, Project], // defineDocumentType으로 정의한 타입들을 여기 등록
   mdx: {
     cwd: process.cwd(), // MDX 처리 시 기준 디렉토리를 프로젝트 루트로 설정
