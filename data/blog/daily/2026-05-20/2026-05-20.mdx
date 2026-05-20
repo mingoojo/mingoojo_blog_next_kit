@@ -1,0 +1,531 @@
+---
+title: '2026-05-20 : Tailwind 디자인 시스템 구축'
+date: '2026-05-20'
+tags: ['daily', 'tailwind', 'design-system', 'css']
+draft: false
+summary: 'primitive → semantic → component, 3단계 토큰 계층으로 유지보수 가능한 디자인 시스템을 만드는 방법. @theme 선언부터 cva 컴포넌트 구현까지.'
+authors: ['default']
+---
+
+## Tailwind v4로 프로덕션 디자인 시스템 구축하기
+
+VITE + REACT + TS환경에서 진행됨
+
+### 1. 왜 디자인 시스템이 필요한가
+
+프로젝트 초기에는 Tailwind CSS의 기본 클래스를 직접 쓰는 게 빠르고 편하다. `bg-violet-600`, `text-gray-900`처럼 쓰면 당장은 잘 동작한다.
+
+하지만 프로젝트가 커지면 문제가 생기기 시작한다.
+
+```tsx
+// 😱 이런 일이 벌어진다
+// A 개발자
+<button className="bg-violet-600 text-white">결제하기</button>
+
+// B 개발자 (같은 primary 버튼인데...)
+<button className="bg-indigo-600 text-white">결제하기</button>
+
+// C 개발자 (브랜드 색이 바뀌면?)
+// 모든 파일에서 violet-600을 찾아서 바꿔야 한다...
+```
+
+> 핵심 문제: 의미 없는 원색 값이 코드 전체에 흩어지면, 브랜드 컬러 하나를 바꾸기 위해 수십 개의 파일을 수정해야 한다. 이건 디자인 시스템의 부재에서 오는 전형적인 기술 부채다.
+
+디자인 시스템은 이 문제를 "**의미 기반 토큰**"으로 해결한다
+
+```tsx
+// ✅ 의미 기반으로 쓰면
+<button className="bg-primary text-text-inverse">결제하기</button>
+
+// 브랜드 컬러가 바뀌어도 토큰 파일 한 곳만 수정하면 끝
+--color-primary: var(--violet-600);  /* 여기만 바꾸면 됨 */
+```
+
+### 2. Tailwind v4의 @theme — 게임 체인저
+
+Tailwind v4에서 가장 중요한 변화는 `@theme` 블록이다. 이 블록 안에 선언한 CSS 변수는 자동으로 Tailwind 유틸리티 클래스로 변환된다.
+
+```css
+/* semantic.css */
+@theme {
+  --color-primary: var(--violet-600);
+}
+
+/* 이제 이런 클래스가 자동으로 생성된다 */
+/* bg-primary, text-primary, border-primary */
+```
+
+이전 Tailwind v3에서는 `tailwind.config.js`에 extend를 해야 했다.
+
+```js
+/* Tailwind v3 방식 — config 파일을 별도로 관리해야 했음 */
+// tailwind.config.js
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        primary: '#4f39f6'
+      }
+    }
+  }
+}
+```
+
+v4에서는 CSS 파일에 바로 선언하면 끝이다. **설정 파일과 스타일 파일이 분리되지 않아도 된다.**
+
+> 주의: @theme 블록은 색상 토큰에만 사용한다. spacing이나 radius 같은 값을 @theme에 넣으면 Tailwind의 기본 간격 체계(p-4, m-2 등)가 덮어씌워지는 충돌이 발생한다. 색상만 @theme에, 나머지는 :root에 분리하는 것이 핵심이다.
+
+### 3. 3단계 토큰 계층 설계
+
+디자인 토큰을 한 파일에 몰아넣으면 관리하기 어려워진다. 3단계로 분리한다.
+
+```bash
+Primitive > Semantic > Component
+```
+
+| 단계      | 파일          | 역할                                          | 컴포넌트에서 직접 사용 |
+| --------- | ------------- | --------------------------------------------- | ---------------------- |
+| Primitive | primitive.css | 원색 팔레트 정의. 의미 없음.                  | ❌ 금지                |
+| Semantic  | semantic.css  | 의미 부여. primary, error, success 등         | ✅ 주로 사용           |
+| Component | component.css | 컴포넌트 전용 토큰. 버튼 높이, 인풋 테두리 등 | ✅ 해당 컴포넌트에서만 |
+
+이 계층의 핵심 원칙은 `단방향 참조`다.
+
+```bash
+/* ✅ 올바른 참조 방향 */
+component → semantic → primitive
+
+/* ❌ 역방향 참조 금지 */
+primitive가 semantic을 참조하면 안 됨
+```
+
+### 4. 1단계: Primitive 토큰
+
+이 단계에서는 "**이 색이 존재한다**"는 사실만 정의한다. 색이 어디에 쓰이는지는 관심 없다. 오직 팔레트만.
+
+```css
+/* primitive.css */
+:root {
+  /* Violet 계열 — 브랜드 포인트 컬러 */
+  --violet-50:  #f0eeff;
+  --violet-100: #e4e0fd;
+  --violet-200: #ccc6fb;
+  --violet-300: #aba2f9;
+  --violet-400: #8a7cf7;
+  --violet-500: #6a57f7;
+  --violet-600: #4f39f6; /* 주 브랜드 컬러 */
+  --violet-700: #3a26d4;
+
+  /* Gray 계열 — 배경, 텍스트, 테두리 */
+  --gray-50:  #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-400: #9ca3af;
+  --gray-600: #4b5563;
+  --gray-900: #111827;
+
+  /* Green 계열 — 성공, 완료 */
+  --green-50:  #f0fdf4;
+  --green-600: #16a34a;
+
+  /* Red 계열 — 에러, 실패 */
+  --red-50:  #fef2f2;
+  --red-600: #dc2626;
+
+  /* Yellow 계열 — 경고 */
+  --yellow-50:  #fefce8;
+  --yellow-600: #ca8a04;
+}
+```
+
+> 컴포넌트에서 직접 사용 금지. bg-[#4f39f6]나 text-[var(--violet-600)]처럼 primitive를 직접 참조하면 토큰 계층의 의미가 없어진다. 반드시 semantic 토큰을 거쳐야 한다.
+
+### 5. 2단계: Semantic 토큰
+
+primitive 토큰에 **의미를 부여**하는 단계다. "이 색이 어디에 쓰이는가"를 정의한다. `@theme` 블록 덕분에 여기 선언한 토큰은 Tailwind 유틸리티 클래스로 자동 변환된다.
+
+```css
+/* semantic.css */
+@theme {
+
+  /* === 브랜드 컬러 === */
+  --color-primary:       var(--violet-600);
+  --color-primary-hover: var(--violet-700);
+  --color-primary-light: var(--violet-50);
+
+  /* === 상태 컬러 === */
+  --color-success:       var(--green-600);
+  --color-success-light: var(--green-50);
+  --color-warning:       var(--yellow-600);
+  --color-warning-light: var(--yellow-50);
+  --color-error:         var(--red-600);
+  --color-error-light:   var(--red-50);
+
+  /* === 배경 컬러 === */
+  --color-bg-base:   var(--white);     /* 기본 페이지 배경 */
+  --color-bg-subtle: var(--gray-50);  /* 카드, 섹션 구분 */
+  --color-bg-muted:  var(--gray-100); /* 비활성, 스켈레톤 */
+
+  /* === 텍스트 컬러 === */
+  --color-text-primary:   var(--gray-900); /* 본문 텍스트 */
+  --color-text-secondary: var(--gray-600); /* 보조 텍스트 */
+  --color-text-disabled:  var(--gray-400); /* 비활성 텍스트 */
+  --color-text-inverse:   var(--white);    /* 어두운 배경 위 */
+
+  /* === 테두리 컬러 === */
+  --color-border:       var(--gray-200);  /* 기본 테두리 */
+  --color-border-strong: var(--gray-400); /* 강조 테두리 */
+  --color-border-focus:  var(--blue-500); /* 포커스 링 */
+}
+```
+
+`@theme`에 선언했기 때문에 아래 클래스들이 자동 생성된다.
+
+| 토큰 변수              | 자동 생성 Tailwind 클래스              |
+| ---------------------- | -------------------------------------- |
+| --color-primary        | bg-primary text-primary border-primary |
+| --color-error          | bg-error text-error border-error       |
+| --color-text-secondary | text-text-secondary                    |
+| --color-bg-subtle      | bg-bg-subtle                           |
+| --color-border         | border-border                          |
+| --color-border-focus   | ring-border-focus                      |
+
+#### 타이포그래피와 간격은 :root에
+
+타이포그래피, spacing, radius, shadow는 `@theme`이 아닌 `:root`에 선언한다. 이 값들을 `@theme`에 넣으면 Tailwind의 기본 유틸리티(p-4, m-2, text-sm 등)가 덮어씌워진다.
+
+```css
+/* semantic.css — @theme 블록 밖, :root에 선언 */
+:root {
+  /* 타이포그래피 */
+  --font-sans: "Pretendard", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* 모서리 둥글기 */
+  --radius-sm: 0.25rem;  /* 4px */
+  --radius-md: 0.5rem;   /* 8px */
+  --radius-lg: 0.75rem;  /* 12px */
+  --radius-xl: 1rem;     /* 16px */
+
+  /* 그림자 */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+```
+
+### 6. 3단계: Component 토큰
+
+semantic 토큰을 참조해서 **특정 컴포넌트에 특화된 값**을 정의한다. 버튼의 높이, 인풋의 테두리 색, 카드의 그림자처럼 컴포넌트 단위로 쪼개어 관리한다.
+
+```css
+/* component.css */
+:root {
+
+  /* === Button === */
+  --btn-primary-bg:       var(--color-primary);
+  --btn-primary-bg-hover: var(--color-primary-hover);
+  --btn-primary-text:     var(--color-text-inverse);
+  --btn-height-sm: 2rem;    /* 32px */
+  --btn-height-md: 2.5rem; /* 40px */
+  --btn-height-lg: 3rem;   /* 48px */
+
+  /* === Input === */
+  --input-border:       var(--color-border);
+  --input-border-focus: var(--color-border-focus);
+  --input-border-error: var(--color-error);
+  --input-height: 2.5rem; /* 40px */
+
+  /* === Card === */
+  --card-bg:     var(--color-bg-base);
+  --card-border: var(--color-border);
+  --card-shadow: var(--shadow-sm);
+  --card-radius: var(--radius-lg);
+
+  /* === 결제 전용 === */
+  --payment-success-bg:   var(--color-success-light);
+  --payment-success-text: var(--color-success);
+  --payment-error-bg:     var(--color-error-light);
+  --payment-error-text:   var(--color-error);
+}
+```
+
+component 토큰은 `@theme` 없이 `:root`에만 선언하기 때문에 Tailwind 유틸리티 클래스가 아닌 순수 CSS 변수로만 존재한다. 필요할 때 `var(--btn-height-md)` 형태로 직접 참조한다.
+
+#### 파일 임포트 순서
+
+세 파일을 순서에 맞게 임포트해야 참조가 정상 동작한다.
+
+```css
+/* design-system/tokens/index.css */
+@import "./primitive.css";  /* 1 — 원색 팔레트 */
+@import "./semantic.css";   /* 2 — 의미 부여 (primitive 참조) */
+@import "./component.css";  /* 3 — 컴포넌트 전용 (semantic 참조) */
+
+/* index.css (앱 전역) */
+@import "tailwindcss";
+@import "./design-system/tokens/index.css";
+```
+
+#### ⚠️ 실제 운용에서 마주친 현실: component 토큰은 TSX에서 쓰이지 않는다
+
+이론적으로는 깔끔한 3단계 구조지만, 실제로 Tailwind-first 프로젝트를 만들다 보면 **component.css에 정의한 토큰이 단 한 줄도 컴포넌트에 쓰이지 않는다**는 걸 발견한다.
+
+이유는 간단하다. 선언 위치의 차이다.
+
+| 선언 방식                    | Tailwind 클래스 생성    | TSX에서 사용                        |
+| ---------------------------- | ----------------------- | ----------------------------------- |
+| `@theme { --color-primary }` | ✅ bg-primary 자동 생성 | className="bg-primary"              |
+| `:root { --btn-primary-bg }` | ❌ Tailwind 클래스 없음 | bg-btn-primary-bg 클래스 존재 안 함 |
+
+`component.css`는 `@theme` 없이 `:root`에만 선언했기 때문에 CSS 변수로만 존재하고, Tailwind 유틸리티 클래스로 변환되지 않는다. 결과적으로 `cva`나 `className`에서 바로 쓸 수 있는 방법이 없다.
+
+```tsx
+// ❌ 이 클래스는 존재하지 않음 — bg-btn-primary-bg 같은 클래스는 안 만들어짐
+const buttonVariants = cva([
+  "bg-btn-primary-bg",  // ← Tailwind가 이 클래스를 모름
+])
+
+// ✅ 실제 코드는 semantic 토큰 클래스를 직접 씀
+const buttonVariants = cva([
+  "bg-primary text-text-inverse hover:bg-primary-hover",  // @theme → 클래스 생성됨
+])
+```
+
+> 핵심 원인: Tailwind는 @theme 블록의 변수만 유틸리티 클래스로 변환한다. :root에 선언한 CSS 변수는 그대로 CSS 변수일 뿐이다. semantic 토큰은 @theme에 있어서 bg-primary가 되고, component 토큰은 :root에 있어서 그런 클래스가 없다.
+
+#### 그렇다면 component.css를 어떻게 해야 할까?
+
+3가지 선택지가 있다.
+
+| 선택지                     | 방법                                                  | 장단점                                                       |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------ |
+| ① 삭제                     | component.css 제거,                                   | semantic에서 바로 컴포넌트로 심플하지만 토큰 계층 단절       |
+| ② @theme으로 이동          | component 토큰도 @theme에 선언 → Tailwind 클래스 생성 | bg-btn-primary-bg 클래스 생성, 하지만 @theme이 너무 비대해짐 |
+| ③ 보존 (CSS 이스케이프 핵) | 현재 구조 유지, CSS 파일 작성 시 참조 목적으로 활용   | TSX에서는 안 쓰이지만, 나중을 위한 참조 레이어로 존재        |
+
+우리 프로젝트는 ③ 보존을 택했다. Tailwind 유틸리티 클래스로 만들 만큼 복잡한 값이 아직 없고, 나중에 CSS Modules나 순수 CSS를 써야 하는 상황이 생기면 이 파일이 참조 기준이 된다. 그리고 무엇보다 — 이 파일이 존재한다는 것 자체가 "이 숫자가 왜 이 값인지"를 설명해준다.
+
+```css
+/* component.css가 있으면 이 숫자의 맥락을 알 수 있음 */
+
+/* component.css */
+--btn-height-md: 2.5rem; /* 40px — 터치 타겟 최소 사이즈 기준 */
+
+/* Button.tsx */
+md: "h-10 ..."  /* h-10 = 2.5rem — 왜 h-10인지 component.css에서 근거를 찾을 수 있음 */
+```
+
+> 결론: Tailwind-first 프로젝트에서 component.css는 "실행되는 코드"가 아니라 "결정 근거를 기록하는 문서"에 더 가깝다. semantic 토큰은 @theme으로 Tailwind와 통합되고, component 토큰은 :root에 남아 값의 의도와 근거를 담는 참조 레이어로 기능한다. 이 구분을 이해하고 팀에 공유하는 것만으로도 충분히 가치가 있다.
+
+### 7. CSS 레이어 충돌 문제와 해결
+
+실제 구현 중 가장 당황스러운 버그를 만났다. `p-6`, `px-4` 같은 패딩 클래스가 전혀 적용되지 않는 것이었다.
+
+```tsx
+/* 문제: 이 패딩이 적용이 안 됨 */
+<Card className="p-6">...</Card>
+```
+
+원인은 CSS 리셋과 Tailwind의 레이어 우선순위 충돌이었다.
+
+```css
+/* ❌ 문제 있는 코드 */
+/* 리셋 — 레이어 없이 선언 (unlayered) */
+*, *::before, *::after {
+  padding: 0;  /* specificity: 0-0-0 이지만 unlayered! */
+}
+
+/* Tailwind 유틸리티는 @layer utilities에 들어감 */
+/* CSS 규칙: unlayered CSS는 @layer보다 항상 이김 */
+/* → p-6이 적용되어도 * { padding: 0 }에 덮임 */
+```
+
+> 💡 CSS Cascade 레이어 규칙: Specificity와 관계없이 unlayered CSS는 @layer 선언보다 항상 우선한다. 리셋 CSS를 아무 레이어 없이 선언하면 Tailwind의 모든 유틸리티 클래스를 덮어버린다.
+
+```css
+/* ✅ 해결: @layer base 안에 리셋 선언 */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-base);
+  }
+}
+```
+
+이제 CSS 레이어 우선순위는 `base → utilities` 순서가 되어 Tailwind 유틸리티 클래스가 정상적으로 적용된다.
+
+---
+
+### 8. 컴포넌트 구현 (cva + tailwind-merge)
+
+토큰을 만들었으면 이제 컴포넌트를 구현할 차례다. 두 가지 도구를 사용한다.
+
+| 라이브러리                     | 역할                                          |
+| ------------------------------ | --------------------------------------------- |
+| class-variance-authority (cva) | variant 기반 클래스 조합을 타입 안전하게 관리 |
+| tailwind-merge (twMerge)       | 충돌하는 Tailwind 클래스를 자동으로 해결      |
+
+#### Button 컴포넌트
+
+```tsx
+// Button.tsx
+import { cva } from "class-variance-authority"
+import { twMerge } from "tailwind-merge"
+
+export const buttonVariants = cva(
+  [
+    "inline-flex items-center justify-center gap-2",
+    "font-medium transition-colors duration-150",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus",
+    "disabled:pointer-events-none disabled:opacity-50",
+    "cursor-pointer",
+  ],
+  {
+    variants: {
+      variant: {
+        primary:   "bg-primary text-text-inverse hover:bg-primary-hover",
+        secondary: "bg-bg-muted text-text-primary hover:bg-bg-subtle border border-border",
+        outline:   "border border-border text-text-primary hover:bg-bg-subtle bg-transparent",
+        ghost:     "text-text-primary hover:bg-bg-muted bg-transparent",
+        danger:    "bg-error text-text-inverse hover:opacity-90",
+        "outline-primary": "bg-white border border-primary text-primary hover:bg-primary-light rounded-[10px]",
+      },
+      size: {
+        sm: "h-8 px-4 text-sm rounded-md",
+        md: "h-10 px-5 text-base rounded-md",
+        lg: "h-12 px-6 text-lg rounded-md",
+      },
+    },
+    defaultVariants: {
+      variant: "primary",
+      size: "md",
+    },
+  },
+)
+
+export function Button({ variant, size, isLoading, disabled, className, children, ...props }) {
+  return (
+    <button
+      className={twMerge(buttonVariants({ variant, size }), className)}
+      disabled={disabled || isLoading}
+    >
+      {isLoading && <Spinner />}
+      {children}
+    </button>
+  )
+}
+```
+
+#### twMerge가 필요한 이유
+
+```ts
+// twMerge 없이 그냥 clsx를 쓰면
+clsx("rounded-md", "rounded-full")
+// → "rounded-md rounded-full" (둘 다 존재, 나중 것이 이기지만 불확실)
+
+// twMerge 사용
+twMerge("rounded-md", "rounded-full")
+// → "rounded-full" (Tailwind 규칙에 따라 충돌 해결, 확실함)
+```
+
+#### Card 컴포넌트 — 의미 기반 variant
+
+Card는 variant 이름을 단순히 시각적 표현이 아니라 사용 목적으로 명명했다.
+
+```tsx
+// Card.tsx
+const variantClasses = {
+  // panel: 데이터/지도/내용 정리용 (테두리 + 약한 그림자)
+  panel: "rounded-[10px] border border-border shadow-md bg-white",
+  // form: 회원가입 같은 단독 폼용 (강한 그림자, 테두리 없음)
+  form: "rounded-2xl shadow-xl bg-white",
+}
+
+// 사용
+<Card variant="form" padding="lg">
+  <LoginForm />
+</Card>
+```
+
+`"form"`이라는 이름을 보는 순간 이게 폼용 카드라는 걸 알 수 있다. `"elevated"`나 `"shadow-xl"` 같은 시각 표현보다 훨씬 명확하다.
+
+---
+
+### 9. 사용 원칙과 팀 컨벤션
+
+아무리 잘 만든 디자인 시스템도 사용 원칙 없이는 무너진다. 팀이 지켜야 할 규칙을 명문화했다.
+
+#### 색상 · 타이포 · 테두리 · 그림자
+
+```tsx
+// ✅ 디자인 토큰 클래스 사용
+<div className="bg-primary text-text-inverse border-border shadow-sm">
+
+// ❌ 원색값 직접 사용 금지
+<div className="bg-violet-600 text-white border-gray-200 shadow">
+<div style={{ color: '#4f39f6' }}>
+```
+
+#### 레이아웃 · 간격 · 정렬
+
+```tsx
+// ✅ Tailwind 기본 유틸리티 사용
+<div className="flex gap-4 p-8 max-w-md mx-auto">
+
+// ❌ 인라인 스타일로 간격 지정 금지
+<div style={{ padding: '32px', display: 'flex' }}>
+```
+
+#### 컴포넌트 추가 클래스 주입 원칙
+
+```tsx
+// ✅ 레이아웃 오버라이드는 className으로
+<Button variant="primary" className="w-full">전체 너비 버튼</Button>
+
+// ❌ 색상/크기 오버라이드는 className으로 하지 않음
+// (토큰과 variant로 해결해야 함)
+<Button className="bg-blue-500 h-20">❌</Button>
+```
+
+#### 계층 참조 규칙 요약
+
+| 레이어         | 참조 가능                       | 참조 금지           |
+| -------------- | ------------------------------- | ------------------- |
+| primitive.css  | 없음 (raw 값만)                 | semantic, component |
+| semantic.css   | primitive                       | component           |
+| component.css  | semantic, primitive             | 없음                |
+| 컴포넌트 (TSX) | semantic, component 토큰 클래스 | primitive 직접 참조 |
+
+---
+
+### 10. 결과 및 회고
+
+#### 만들어진 컴포넌트 목록
+
+`Button` `Input` `Card` `Badge` `Modal` `Toast` `Spinner` `Text` `LinkText` `Checkbox` `Select` `Toggle` `RadioGroup` `Divider`
+
+#### 얻은 것
+
+- 브랜드 컬러 변경 → 토큰 파일 1곳만 수정으로 전체 적용
+- 컴포넌트가 `bg-primary`만 알면 됨. 실제 색상값은 몰라도 됨.
+- variant 이름이 시각이 아닌 의미/용도 기반이라 코드 리뷰 시 의도가 명확히 보임
+- `twMerge` 덕분에 `className`으로 외부 주입 시 충돌 걱정 없음
+- TypeScript + cva 조합으로 잘못된 variant 값은 빌드 시 잡아냄
+
+#### 삽질 포인트
+
+- spacing을 `@theme`에 넣으면 안 된다. Tailwind 기본 간격이 전부 날아간다. 색상만 `@theme`에.
+- CSS 리셋은 반드시 `@layer base` 안에. unlayered 리셋은 Tailwind 유틸리티 전체를 덮어버린다.
+- CSS `@import` 경로에 Vite 앨리어스(`@/`) 못 씀. CSS는 번들러를 안 거쳐서 상대 경로로 써야 함.
+- Tailwind 동적 클래스 생성 안 됨. `'peer-checked:' + someVar` 같은 동적 문자열 연결은 Tailwind가 인식 못 함. 반드시 완전한 문자열로 써야 함.
+
+#### 마치며
+
+디자인 시스템은 "예쁜 컴포넌트 모음"이 아니다. 변경에 강하고, 의미가 명확하며, 팀원 누구든 일관된 방식으로 UI를 만들 수 있게 하는 약속이다.
+
+Tailwind v4의 `@theme`은 이 약속을 CSS와 유틸리티 클래스로 자연스럽게 연결해주는 강력한 도구다. `primitive → semantic → component` 계층만 잘 지켜도, 프로젝트가 커져도 디자인 일관성을 유지할 수 있다.

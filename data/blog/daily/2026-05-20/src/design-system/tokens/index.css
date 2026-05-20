@@ -1,0 +1,4 @@
+/* 토큰 로딩 순서 중요 — primitive → semantic → component */
+@import './primitive.css';
+@import './sementic.css';
+@import './component.css';

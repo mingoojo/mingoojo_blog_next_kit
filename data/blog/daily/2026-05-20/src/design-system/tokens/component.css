@@ -1,0 +1,39 @@
+/*
+  [3단계] Component Tokens — 컴포넌트 전용 토큰
+
+  semantic 토큰을 참조해서 특정 컴포넌트에 특화된 값을 정의.
+  컴포넌트 스타일을 바꿀 때 여기만 수정하면 됨 (semantic, primitive 건드릴 필요 없음).
+
+  @theme 없이 :root에 선언 → Tailwind 유틸리티로는 안 만들어짐.
+  CSS 변수로만 사용.
+*/
+:root {
+  /* === Button === */
+  --btn-primary-bg: var(--color-primary);
+  --btn-primary-bg-hover: var(--color-primary-hover);
+  --btn-primary-text: var(--color-text-inverse);
+  --btn-height-sm: 2rem; /* 32px */
+  --btn-height-md: 2.5rem; /* 40px */
+  --btn-height-lg: 3rem; /* 48px */
+
+  /* === Input === */
+  --input-border: var(--color-border);
+  --input-border-focus: var(--color-border-focus);
+  --input-border-error: var(--color-error);
+  --input-bg: var(--color-bg-base);
+  --input-height: 2.5rem; /* 40px */
+
+  /* === Card === */
+  --card-bg: var(--color-bg-base);
+  --card-border: var(--color-border);
+  --card-shadow: var(--shadow-sm);
+  --card-radius: var(--radius-lg);
+
+  /* === 결제 전용 === */
+  --payment-success-bg: var(--color-success-light);
+  --payment-success-text: var(--color-success);
+  --payment-error-bg: var(--color-error-light);
+  --payment-error-text: var(--color-error);
+  --payment-pending-bg: var(--color-primary-light);
+  --payment-pending-text: var(--color-primary);
+}
