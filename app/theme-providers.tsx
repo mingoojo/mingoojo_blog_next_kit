@@ -1,11 +1,15 @@
 'use client'
 
 import { ThemeProvider } from 'next-themes'
-import siteMetadata from '@/data/siteMetadata'
 
 export function ThemeProviders({ children }: { children: React.ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme={siteMetadata.theme} enableSystem>
+    <ThemeProvider
+      forcedTheme="light" // 이거 추가
+      attribute="class"
+      defaultTheme="light"
+      enableSystem={false} // 시스템 설정 무시
+    >
       {children}
     </ThemeProvider>
   )
