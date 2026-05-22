@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://mingoojo-blog-next-kit.vercel.app
+
+# Sitemaps
+Sitemap: https://mingoojo-blog-next-kit.vercel.app/sitemap.xml
