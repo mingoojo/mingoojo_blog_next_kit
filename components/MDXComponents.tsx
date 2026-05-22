@@ -6,6 +6,9 @@ import Image from './Image'
 import CustomLink from './Link'
 import TableWrapper from './TableWrapper'
 import Mermaid from '@/components/mdxComponents/Mermaid' // <- 'use client' 래퍼 or re-export
+import Callout from '@/components/mdxComponents/Callout'
+import CodeCompare from '@/components/mdxComponents/CodeCompare'
+import CodePanel from '@/components/mdxComponents/CodePanel'
 
 // ✅ children 구조가 어떻든 "문자열"만 끝까지 뽑아낸다
 function extractTextDeep(node: any): string {
@@ -56,4 +59,7 @@ export const components: MDXComponents = {
   pre: PreWithMermaid, // 🔁 여기만 교체
   table: TableWrapper,
   BlogNewsletterForm,
+  Callout,
+  CodeCompare,
+  CodePanel,
 }

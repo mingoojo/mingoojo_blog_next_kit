@@ -1,10 +1,11 @@
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
 import { slug } from 'github-slugger'
-import tagData from 'app/tag-data.json'
-import { genPageMetadata } from 'app/seo'
+
+import { genPageMetadata } from '../seo'
 import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
 import { allBlogs } from 'contentlayer/generated'
+import tagData from '../tag-data.json'
 
 export const metadata = genPageMetadata({ title: 'Tags', description: 'Things I blog about' })
 

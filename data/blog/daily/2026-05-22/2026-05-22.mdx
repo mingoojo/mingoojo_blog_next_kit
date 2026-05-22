@@ -1,0 +1,793 @@
+---
+title: '2026-05-22 : TanStack Query 도입기'
+date: '2026-05-22'
+tags: ['daily', 'tailwind', 'design-system', 'css']
+draft: false
+summary: '직접 짠 axios 통신 코드의 구조적 문제를 분석하고, TanStack Query 도입으로 어떻게 개선됐는지 단계별로 정리한다'
+authors: ['default']
+---
+
+## TanStack Query 도입기 — 내 API 코드의 무엇이 문제였나
+
+VITE + REACT + TS환경에서 진행됨
+
+[파일 깃헙 주소](https://github.com/mingoojo/mingoojo_blog_next_kit/tree/main/playground/2026-05-22/src)
+
+### 1. 기존 코드 — 이렇게 짰었다
+
+백엔드 없이 혼자 프론트를 짤 때, 대부분 나는 이런 구조로 시작한다. axios instance 하나 만들고, 인터셉터 달고, api 함수 파일 따로 뽑고. 당장은 잘 돌아간다.
+
+#### axiosConfig.js — axios 인스턴스
+
+```ts
+// axiosConfig.js
+import axios from "axios";
+import auth from "./auth";
+
+// 😬 환경변수를 if/else로 수동 분기
+let url;
+if (process.env.REACT_APP_ENV === "development") {
+  url = "http://localhost:5050";
+} else if (process.env.REACT_APP_ENV === "docker") {
+  url = "http://localhost:5001";
+} else {
+  url = "https://[배포url]";
+}
+
+const apiAxios = axios.create({
+  baseURL: url,
+  timeout: 10000,
+});
+
+// 요청 인터셉터 — withCredentials를 여기서 매번 세팅
+apiAxios.interceptors.request.use(
+  function(config) {
+    config.withCredentials = true;  // 인스턴스 생성 시 넣으면 될 걸 여기서
+    return config;
+  },
+  function(error) {
+    return Promise.reject(error);
+  }
+);
+
+// 응답 인터셉터
+apiAxios.interceptors.response.use(
+  async (response) => {
+    return response;
+  },
+  async (error) => {
+    console.log(error.response)  // console.log가 프로덕션에 그대로
+
+    if (error.response?.status === 401) {
+      localStorage.clear();        // 어떤 키가 지워지는지 모름
+      await auth.signOut();        // auth를 여기서 import — 순환 참조 위험
+    }
+    if (error.response?.status === 403) {
+      localStorage.clear();
+      await auth.signOut();
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+export default apiAxios;
+```
+
+#### auth.js — API 함수 모음
+
+```ts
+// auth.js
+const signIn = async (signInInfo) => {
+  try {
+    const res = await axiosConfig({
+      url: "/api/auth/signin",
+      method: "post",
+      data: signInInfo,
+    });
+
+    // 에러를 상태코드가 아닌 응답 body 문자열로 구분
+    if (res.data === "passwordFail") {
+      return "passwordFail";
+    }
+
+    return res;
+  } catch (error) {
+    throw error;  // catch해서 그냥 다시 throw — 의미 없음
+  }
+}
+```
+
+#### 컴포넌트에서 사용
+
+```tsx
+// Dashboard.jsx
+const [loginCnt, setLoginCnt] = useState(null)
+const [isLoading, setIsLoading] = useState(false)  // 😬 매번 직접 만들어야 함
+const [error, setError] = useState(null)           // 😬 에러도 직접 관리
+
+const findLoginCnt = async () => {
+  setIsLoading(true)   // 😬 잊으면 로딩 UI 깨짐
+  try {
+    const startDate = dayjs(new Date()).subtract(7, "day").format("YYYY-MM-DD");
+    const endDate   = dayjs(new Date()).add(7, "day").format("YYYY-MM-DD");
+    const loginCnt  = await adminAxios.findLoginCnt(startDate, endDate);
+    setLoginCnt(loginCnt);
+  } catch (e) {
+    setError(e)
+  } finally {
+    setIsLoading(false)  // 😬 finally 빠뜨리면 로딩이 영원히 안 꺼짐
+  }
+}
+
+useEffect(() => {
+  findLoginCnt()
+}, [])
+
+// 😬 컴포넌트가 10개면 이 패턴을 10번 반복해야 함
+```
+
+<br />
+
+### 2. 뭐가 문제였나 — 6가지 구조적 결함
+
+|     | **문제**                               | **설명**                                                                                                                          |
+| --- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 로딩/에러 상태 반복                    | 컴포넌트마다 `isLoading`, `error`, `setIsLoading`을 직접 만들어야 한다. 10개 페이지면 10번 반복.                                  |
+| 2   | 캐시가 없다                            | 같은 데이터를 여러 컴포넌트에서 쓰면 각자 따로 요청한다. 탭을 왔다갔다 할 때마다 매번 새로 불러온다.                              |
+| 3   | 순환 참조 위험                         | `axiosConfig.js`에서 `auth.js`를 import하고, `auth.js`에서 `axiosConfig.js`를 import한다.                                         |
+| 4   | 에러 구분을 body 문자열로              | `if (res.data === "passwordFail")` — 에러 구분을 HTTP 상태코드가 아닌 문자열로 한다. 백엔드와 약속이 바뀌면 프론트도 바꿔야 한다. |
+| 5   | console.log 프로덕션 노출              | 인터셉터에 `console.log(error.response)`가 그대로. 프로덕션에서도 에러 정보가 콘솔에 찍힌다.                                      |
+| 6   | 환경변수 검증 없음 - 추후에 zod로 해결 | `if/else`로 URL을 분기하지만, 환경변수가 아예 없어도 조용히 `undefined`로 실행된다. 배포 후에야 발견.                             |
+
+#### 치명적인 문제 1 — 로딩 상태 관리 반복
+
+API가 10개면 아래 패턴을 10번 작성해야 한다. `finally`를 한 번이라도 빠뜨리면 로딩이 영원히 꺼지지 않는다.
+
+```tsx
+// 모든 컴포넌트에서 이걸 반복한다
+const [data, setData]         = useState(null)
+const [isLoading, setLoading] = useState(false)
+const [error, setError]       = useState(null)
+
+const fetchData = async () => {
+  setLoading(true)
+  try {
+    const res = await someApi.getData()
+    setData(res)
+  } catch (e) {
+    setError(e)
+  } finally {
+    setLoading(false)  // 이거 빠뜨리면 무한 로딩
+  }
+}
+
+useEffect(() => { fetchData() }, [])
+```
+
+<Callout type="error" label="진짜 문제:">
+ 이건 단순한 "코드가 지저분하다" 수준이 아니다. 로딩/에러 처리를 매번 수동으로 하다 보면 빠뜨리는 순간이 반드시 온다. 그게 사용자 경험 버그로 이어진다.
+</Callout>
+
+#### 치명적인 문제 2 — 순환 참조 문제
+
+```ts
+// axiosConfig.js
+import auth from "./auth"  // auth를 import
+
+apiAxios.interceptors.response.use(null, async (error) => {
+  await auth.signOut()     // auth의 함수를 호출
+})
+
+// auth.js
+import axiosConfig from "./axiosConfig"  // 다시 axiosConfig를 import
+
+const signOut = async () => {
+  const res = await axiosConfig({ url: "/api/auth/signout" })
+}
+
+// A → B → A → B → ... 순환 참조
+// JS 모듈 시스템에서 한 쪽이 undefined로 resolve될 수 있음
+```
+
+<br />
+
+### 3. TanStack Query 도입
+
+#### TanStack Query 원리와 도입이유
+
+기존 API 통신 방식은 `axios`로 요청을 보내고, 컴포넌트 안에서 useState로 로딩/에러/데이터 상태를 직접 관리했다.
+API가 늘어날수록 모든 컴포넌트에 똑같은 패턴이 반복됐고, `finally`를 빠뜨리면 무한 로딩 버그가 생기는 구조적 문제가 있었다.
+
+TanStack Query는 이 **서버 상태 관리** 문제를 전담하는 라이브러리다.
+핵심 동작 원리는 `queryKey`라는 고유 식별자를 기반으로 서버 데이터를 캐싱하고,
+같은 key로 요청하는 컴포넌트끼리 캐시를 공유한다.
+데이터가 오래됐다고 판단되면 백그라운드에서 자동으로 재요청하고, 실패하면 자동으로 재시도한다.
+
+도입 후 **컴포넌트에서 로딩/에러 상태를 직접 선언할 필요가 없어졌고**,
+서버 상태 관련 코드가 hook 레이어로 분리되어 **컴포넌트는 UI 렌더링에만 집중**할 수 있게 됐다.
+
+#### 1) 설치와 기본 세팅
+
+```bash
+npm install @tanstack/react-query
+```
+
+```tsx
+// main.tsx — 최상단에 한 번만
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+
+const queryClient = new QueryClient()
+
+render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>
+)
+```
+
+#### 2) useQuery — 데이터 가져오기(GET Method)
+
+기존 방식에서 직접 관리하던 `isLoading / error / data / useEffect`를 `useQuery` 하나가 전부 대신한다.
+
+<CodeCompare>
+  <CodePanel type="bad" title="기존 방식">
+    ```tsx
+      const [data, setData] = useState(null)
+      const [isLoading, setLoading]
+        = useState(false)
+      const [error, setError] = useState(null)
+
+      useEffect(() => {
+      setLoading(true)
+      fetch("/api/users")
+      .then(r => r.json())
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false))
+      }, [])
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="useQuery 도입 방식">
+    ```tsx
+    const { data, isPending, isError }
+      = useQuery({
+        queryKey: ["users"],
+        queryFn: () =>
+          fetch("/api/users")
+            .then(r => r.json())
+      })
+    ```
+  </CodePanel>
+</CodeCompare>
+
+```tsx
+import { useQuery } from "@tanstack/react-query"
+
+function UserList() {
+  const { data, isPending, isError, error } = useQuery({
+
+    // queryKey: 캐시 식별자. 같은 key = 같은 캐시를 공유
+    // 배열에 변수를 넣으면 변수가 바뀔 때 자동으로 재요청
+    queryKey: ["users"],
+
+    // queryFn: Promise를 반환하는 함수면 뭐든 OK. axios든 fetch든
+    queryFn: () => fetch("/api/users").then(r => r.json()),
+  })
+
+  if (isPending) return <div>로딩중...</div>
+  if (isError)   return <div>에러: {error.message}</div>
+
+  return <ul>{data.map(u => <li key={u.id}>{u.name}</li>)}</ul>
+}
+```
+
+- **queryKey에 변수 넣기 — 자동 재요청**
+
+  ```tsx
+  const [userId, setUserId] = useState(1)
+
+  const { data } = useQuery({
+    queryKey: ["user", userId],   // userId가 바뀌면 자동으로 새 요청
+    queryFn: () => fetch(`/api/users/${userId}`).then(r => r.json()),
+  })
+
+  // setUserId(2) 호출하는 순간 → /api/users/2 자동 요청
+  ```
+
+- **주요 옵션**
+
+  ```tsx
+  useQuery({
+    queryKey: ["user"],
+    queryFn: () => fetch("/api/user").then(r => r.json()),
+
+    staleTime: 1000 * 60 * 5,  // 5분간 fresh — 재요청 안 함 (기본값 0)
+    gcTime:    1000 * 60 * 10, // 10분간 캐시 메모리에 유지 (기본값 5분)
+    enabled:   !!userId,         // false면 요청 자체를 실행 안 함
+    retry:     3,               // 실패 시 자동 재시도 횟수 (기본값 3)
+    refetchOnWindowFocus: false, // 탭 포커스 시 재요청 끄기
+  })
+  ```
+
+#### 3) useMutation — 데이터 변경 (POST / PUT / DELETE)
+
+```tsx
+import { useMutation } from "@tanstack/react-query"
+
+function LoginForm() {
+  const { mutate, isPending, isError } = useMutation({
+
+    mutationFn: (body: { email: string; password: string }) =>
+      fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(r => r.json()),
+
+    onSuccess: (data) => {
+      console.log("로그인 성공", data)
+    },
+    onError: (error) => {
+      console.log("로그인 실패", error)
+    },
+  })
+
+  return (
+    <button
+      onClick={() => mutate({ email: "a@a.com", password: "1234" })}
+      disabled={isPending}
+    >
+      {isPending ? "로그인 중..." : "로그인"}
+    </button>
+  )
+}
+```
+
+- **mutation 후 캐시 갱신**
+
+  ```tsx
+  import { useMutation, useQueryClient } from "@tanstack/react-query"
+
+  const queryClient = useQueryClient()
+
+  const { mutate: deleteUser } = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/users/${id}`, { method: "DELETE" }).then(r => r.json()),
+
+    onSuccess: () => {
+      // "users" 캐시를 무효화 → 목록이 자동으로 최신화됨
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+    },
+  })
+  ```
+
+#### **상태값 정리**
+
+| 상태         | 설명                       | useQuery | useMutation        |
+| ------------ | -------------------------- | -------- | ------------------ |
+| `isPending`  | 처음 로딩 중 (데이터 없음) | **가능** | **가능** (실행 중) |
+| `isFetching` | 백그라운드 재요청 중       | **가능** | —                  |
+| `isSuccess`  | 성공                       | **가능** | **가능**           |
+| `isError`    | 실패                       | **가능** | **가능**           |
+| `data`       | 성공 시 데이터             | **가능** | **가능**           |
+| `error`      | 실패 시 에러 객체          | **가능** | **가능**           |
+
+#### 4. useMutation 전체 구조와 옵션
+
+`useMutation`이 반환하는 값과 받는 옵션 전체를 한 번에 보자.
+
+```tsx
+const {
+  mutate,       // 실행 함수 — 반환값 없음, onSuccess/onError로 결과 처리
+  mutateAsync,  // 실행 함수 — Promise 반환, try/catch로 결과 처리
+  isPending,    // 실행 중 여부 (버튼 disabled에 바로 사용)
+  isSuccess,    // 성공 여부
+  isError,      // 실패 여부
+  data,         // 성공 응답 데이터
+  error,        // 실패 에러 객체
+  reset,        // 상태 초기화 (isError, data 등을 idle 상태로)
+} = useMutation({
+  mutationFn: (변수) => API호출,         // 필수 — Promise 반환 함수
+
+  onMutate:   (variables) => {},         // 실행 직전 — 낙관적 업데이트에 활용
+  onSuccess:  (data, variables) => {},   // 성공 시
+  onError:    (error, variables) => {},  // 실패 시
+  onSettled:  (data, error) => {},       // 성공/실패 둘 다 — finally와 같은 역할
+})
+```
+
+**mutate vs mutateAsync — 어떨 때 뭘 쓰나**
+
+둘 다 같은 API를 호출하지만 결과를 받는 방식이 다르다.
+
+<CodeCompare>
+  <CodePanel type="info" title="MUTATE — 콜백 방식">
+    ```tsx
+      mutate({ email, password })
+      // 반환값 없음
+      // 결과는 onSuccess/onError로
+
+      const { mutate } = useMutation({
+        mutationFn: authApi.login,
+        onSuccess: (res) => {
+          setAuth(res.data.user)
+          navigate("/")
+        },
+        onError: () => {
+          toast.error("실패")
+        },
+      })
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="info" title="MUTATEASYNC — PROMISE 방식">
+    ```tsx
+    const res = await mutateAsync(
+      { email, password }
+    )
+    // Promise 반환 → try/catch 사용
+
+    const { mutateAsync } = useMutation({
+      mutationFn: authApi.login,
+    })
+
+    try {
+      const res = await mutateAsync(body)
+      navigate("/")
+    } catch(e) {
+      toast.error("실패")
+    }
+    ```
+
+  </CodePanel>
+</CodeCompare>
+
+**mutate**는 단순한 경우에 적합하다. 성공/실패 처리가 독립적이고 다음 동작이 결과에 따라 분기되지 않을 때.
+
+**mutateAsync**는 로그인 후 프로필 API를 추가로 호출하거나, **성공 결과를 가지고 다음 동작을 순서대로 이어가야 할 때** 유리하다.
+
+```tsx
+// mutateAsync — 성공 후 추가 API 호출이 필요한 경우
+const handleSubmit = async () => {
+  try {
+    const loginRes = await mutateAsync({ email, password })
+
+    // 로그인 응답의 userId로 바로 추가 API 호출
+    const profile = await fetchProfile(loginRes.data.user.id)
+
+    navigate("/dashboard", { state: { profile } })
+  } catch (e) {
+    toast.error("로그인 실패")
+  }
+}
+
+// mutate — 단순한 경우
+const handleSubmit = () => {
+  mutate({ email, password })  // 결과 처리는 onSuccess/onError에서
+}
+```
+
+**onSuccess / onError / onSettled 콜백**
+
+```tsx
+useMutation({
+  mutationFn: deleteUser,
+
+  onSuccess: (data, variables) => {
+    // data: 서버 응답, variables: mutate()에 넘긴 인자
+    queryClient.invalidateQueries({ queryKey: ["users"] })
+    toast.success(`${variables.name} 삭제 완료`)
+  },
+
+  onError: (error, variables) => {
+    toast.error("삭제 실패")
+    console.error(error)
+  },
+
+  onSettled: () => {
+    // 성공이든 실패든 항상 실행 — 로딩 UI 종료 등에 활용
+    setSubmitting(false)
+  },
+})
+```
+
+<br/>
+**GET 요청에 useMutation을 안 쓰는 이유**
+
+기술적으로 useMutation으로 GET 요청을 날릴 수 있다. 막히지는 않는다. 하지만 쓰지 않는다. 이유는 단순하다 — useQuery가 GET을 위해 설계됐고, useMutation으로 대체하면 그 혜택이 전부 사라진다.
+
+| 기능               | useQuery                          | useMutation으로 GET             |
+| ------------------ | --------------------------------- | ------------------------------- |
+| 자동 실행          | ✅ 마운트되면 바로                | ❌ mutate() 직접 호출해야 함    |
+| 캐시               | ✅ queryKey 기반 캐시 공유        | ❌ 없음 — 호출할 때마다 새 요청 |
+| 백그라운드 재요청  | ✅ 탭 포커스, 네트워크 재연결 시  | ❌ 없음                         |
+| 자동 재시도        | ✅ retry 옵션                     | ❌ 없음                         |
+| staleTime 제어     | ✅ 얼마나 오래 캐시할지 설정 가능 | ❌ 없음                         |
+| 여러 컴포넌트 공유 | ✅ 같은 queryKey → 같은 캐시      | ❌ 각자 독립적으로 요청         |
+
+<CodeCompare>
+  <CodePanel type="bad" title="GET을 useMutation으로 하면">
+    ```tsx
+    const { mutate, data } = 
+    useMutation({
+      mutationFn: () => 
+      fetch("/api/users")
+      .then(r => r.json()),
+    })
+
+    useEffect(() => {
+      mutate()        // 수동으로 호출해야 함
+    }, [])            // 캐시 재시도, 공유 없음
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="GET은 useQuery로">
+    ```tsx
+    const { data, isPending } = 
+      useQuery({
+        queryKey: ["users"],
+        queryFn: () => fetch("/api/users")
+          .then(r => r.json()),
+        staleTime: 1000 * 60 * 5,// 5분 캐시
+        // 자동 실행, 캐시, 재시도, 
+        // 백그라운드 갱신 전부 포함
+      })
+    ```
+  </CodePanel>
+</CodeCompare>
+
+**예외 — 사용자가 직접 트리거하는 검색**
+
+<CodeCompare>
+  <CodePanel type="info" title="[1] enabled 옵션 — 권장">
+    ```tsx
+    const [keyword, setKeyword] = useState("")
+
+    const { data } = useQuery({
+      queryKey: ["search", keyword],
+      queryFn: () =>
+        fetch(`/api/search?q=${keyword}`)
+        .then(r => r.json()),
+      // keyword 있을 때만 실행
+      enabled: keyword.length > 0,
+      // 추가 이점: 같은 키워드는 캐시에서 즉시 반환
+    })
+
+    <input onChange={(e) =>
+      setKeyword(e.target.value)} />
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="info" title="[2] useMutation: 캐시 없이 매번 새로 불러야 할 때">
+    ```tsx
+    const { mutate, data, isPending } = 
+    useMutation({
+      mutationFn: (keyword: string) =>
+        fetch(`/api/search?q=${keyword}`)
+        .then(r => r.json()),
+    })
+
+    <button onClick={() =>
+      mutate(keyword)}>검색</button>
+    ```
+
+  </CodePanel>
+</CodeCompare>
+
+<Callout type="tip" label="판단 기준:">
+  <>
+    GET이냐 POST냐 HTTP 메서드보다 "자동으로 실행되어야 하냐 vs 내가 직접 트리거해야 하냐"로 구분하는 게 더 정확하다.
+    <div>
+      자동 실행 + 캐시 필요 → useQuery
+    </div>
+    <div>
+      수동 실행 + 캐시 불필요 → useMutation
+    </div>
+  </>
+</Callout>
+
+### 4. 발전된 구조 — 실무 도입 패턴
+
+TanStack Query만 도입한다고 끝이 아니다. apiClient, 인터셉터, api 함수, hook을 **역할별로 계층화**해야 유지보수 가능한 구조가 된다.
+
+|            단계            |             기능             |
+| :------------------------: | :--------------------------: |
+|        1. 컴포넌트         | UI만 안다. hook이 뭔지만 앎. |
+|             ▽              |
+|   2. hook (useMutation)    |  성공/실패 처리, 상태 관리   |
+|             ▽              |
+|   3. api 함수 (authApi)    |    엔드포인트, 타입 정의     |
+|             ▽              |
+| 4. apiClient + interceptor |  토큰 주입, 전역 에러 처리   |
+|             ▽              |
+| 5. 네트워크 (MSW or 서버)  |        BACKEND OR MSW        |
+
+#### 1단계 — apiClient (axios instance)
+
+```ts
+// src/shared/api/client.ts
+import axios from "axios"
+import { env } from "@/shared/config/env"  // Zod 검증된 환경변수
+
+export const apiClient = axios.create({
+  baseURL: env.VITE_API_BASE_URL,  // 환경변수 Zod 검증 — 잘못되면 앱 실행 자체가 막힘
+  timeout: 10_000,
+  headers: { "Content-Type": "application/json" },
+  withCredentials: true,          // 인스턴스 생성 시 한 번만 — 인터셉터 불필요
+})
+
+// ── 요청 인터셉터 — 토큰 자동 주입 ──
+apiClient.interceptors.request.use((config) => {
+  const token = useAuthStore.getState().accessToken  // 스토어에서 직접 읽기
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// ── 응답 인터셉터 — 전역 에러 처리 ──
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status
+    const url    = error.config?.url ?? ""
+
+    // 로그인/회원가입은 401이 정상 응답 — 강제 로그아웃 제외
+    const isAuthEndpoint =
+      url.includes("/auth/login") || url.includes("/auth/signup")
+
+    if (status === 401 && !isAuthEndpoint) {
+      useAuthStore.getState().clearAuth()  // 스토어 초기화 (auth import 없음)
+      window.location.href = "/login"
+    }
+
+    return Promise.reject(error)
+  }
+)
+```
+
+<Callout type="tip" label="순환 참조 해결:">
+  auth 모듈을 import하지 않고 useAuthStore.getState()로 스토어를 직접 읽는다. Zustand 스토어는 React 컨텍스트 밖에서도 호출 가능하기 때문에 인터셉터 같은 모듈 레벨 코드에서도 사용할 수 있다.
+</Callout>
+
+#### 2단계 — api 함수 (타입 포함)
+
+```ts
+// src/features/auth/api/auth.api.ts
+import { apiClient } from "@/shared/api/client"
+import type { LoginRequest, LoginResponse, ApiResponse } from "../types/auth.types"
+
+export const authApi = {
+  // 반환 타입이 명시되어 있어 hook에서 타입 추론이 자동으로 됨
+  login: (body: LoginRequest) =>
+    apiClient
+      .post<ApiResponse<LoginResponse>>("/auth/login", body)
+      .then(r => r.data),  // axios 래퍼 { data, status } 중 data만 꺼냄
+
+  logout: () =>
+    apiClient.post<ApiResponse<null>>("/auth/logout").then(r => r.data),
+
+  refresh: () =>
+    apiClient.post<ApiResponse<RefreshResponse>>("/auth/refresh").then(r => r.data),
+}
+```
+
+#### 3단계 — hook (TanStack Query로 감싸기)
+
+```ts
+// src/features/auth/hooks/useLogin.ts
+import { useMutation } from "@tanstack/react-query"
+import { authApi } from "../api/auth.api"
+import { useAuthStore } from "@/store/auth.store"
+
+export function useLogin() {
+  const { setAuth } = useAuthStore()
+
+  return useMutation({
+    mutationFn: (body: LoginRequest) => authApi.login(body),
+
+    onSuccess: (res) => {
+      // 성공 시 스토어에 저장 — 컴포넌트가 이 로직을 몰라도 됨
+      setAuth(res.data.user, res.data.accessToken)
+    },
+  })
+}
+```
+
+#### 4단계 — 컴포넌트에서 사용
+
+```tsx
+// src/pages/LoginPage.tsx
+import { useLogin } from "@/features/auth/hooks/useLogin"
+
+function LoginPage() {
+  const { mutate: login, isPending } = useLogin()
+
+  const handleSubmit = (data: LoginRequest) => {
+    login(data)
+    // 끝. 로딩/에러/성공/스토어 저장 전부 hook이 처리
+  }
+
+  return (
+    <button onClick={() => handleSubmit({ email, password })} disabled={isPending}>
+      {isPending ? "로그인 중..." : "로그인"}
+    </button>
+  )
+}
+```
+
+### 5. Before / After 전체 비교
+
+| 항목        | 기존 방식                                        | 개선된 구조                                        |
+| ----------- | ------------------------------------------------ | -------------------------------------------------- |
+| 로딩 상태   | 컴포넌트마다 `useState(false)` 직접 선언         | `isPending` 자동 제공                              |
+| 에러 상태   | `try/catch`로 직접 관리, `finally` 빠뜨리면 버그 | `isError`, `error` 자동 제공                       |
+| 캐시        | 없음. 컴포넌트가 바뀔 때마다 재요청              | `staleTime`으로 제어. 같은 key는 캐시 공유         |
+| 환경변수    | `if/else` 수동 분기, 없어도 조용히 `undefined`   | `Zod` 검증 — 잘못되면 앱 시작 시 즉시 에러         |
+| 순환 참조   | `axiosConfig` ↔ auth 서로 `import`              | 인터셉터에서 `useAuthStore.getState()`로 직접 접근 |
+| 에러 구분   | `res.data` === `"passwordFail"` 문자열 비교      | HTTP 상태코드(401, 409 등)로 구분                  |
+| 타입 안전   | JS — 타입 없음, 런타임에 발견                    | TS 제네릭 — 빌드 시 타입 불일치 감지               |
+| MSW 연동    | 불가 (코드에 더미 데이터 직접)                   | 환경변수 하나로 MSW ↔ 실제 서버 전환              |
+| 백엔드 전환 | if문, 더미 데이터 전부 제거                      | `npm run dev:real` 실행 명령어 하나                |
+
+**코드 양 비교**
+
+<CodeCompare>
+  <CodePanel type="bad" title="기존 — 컴포넌트 내부">
+    ```tsx
+    // 컴포넌트마다 반복
+    const [data, setData] = useState(null)
+    const [loading, setLoading]
+      = useState(false)
+    const [error, setError] = useState(null)
+
+    const fetch = async () => {
+      setLoading(true)
+      try {
+        const res = await authApi.login(body)
+        setData(res)
+        // 스토어 저장도 여기서
+        setAuth(res.user, res.token)
+      } catch(e) {
+        setError(e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    useEffect(() => { fetch() }, [])
+    // 총 15줄, 컴포넌트 10개 = 150줄
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="개선 — 컴포넌트 내부">
+    ```tsx
+   const {
+      mutate: login,
+      isPending,
+      isError,
+    } = useLogin()
+    // 3줄로 끝
+    // 로딩/에러/스토어 저장
+    // 전부 hook 내부에서 처리
+
+    // 컴포넌트 10개여도
+    // useLogin() 하나씩만 추가
+    ```
+
+  </CodePanel>
+</CodeCompare>
+
+<Callout type="tip" label="핵심 인사이트:">
+기존 방식의 문제는 "코드가 길다"가 아니라 "서버 상태 관리 책임이 컴포넌트에 있다"는 설계 문제다. TanStack Query는 서버 상태 관리를 컴포넌트 밖으로 꺼내서 컴포넌트가 UI 렌더링에만 집중할 수 있게 한다.
+</Callout>
+
+### 마치며
+
+기존 방식이 나쁜 코드여서 바꾼 게 아니다. 프로젝트 규모가 작을 때는 충분히 잘 동작한다. 하지만 컴포넌트가 10개, 20개를 넘어가는 순간 로딩 상태 관리, 캐시 부재, 중복 요청 문제가 쌓이기 시작한다.
+
+`TanStack Query + 계층화된 구조`는 이 문제를 한 번에 해결한다. 컴포넌트는 UI만, hook은 상태만, api 함수는 통신만, 인터셉터는 전역 처리만. 각 레이어가 하나의 책임만 가지면 유지보수도 테스트도 쉬워진다.

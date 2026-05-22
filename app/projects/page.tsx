@@ -1,5 +1,5 @@
 import Card from '@/components/Card'
-import { genPageMetadata } from 'app/seo'
+import { genPageMetadata } from '../seo'
 import { sortPosts, allCoreContent } from 'pliny/utils/contentlayer'
 import { allProjects } from 'contentlayer/generated'
 

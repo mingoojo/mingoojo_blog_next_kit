@@ -3,10 +3,11 @@ import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
 import siteMetadata from '@/data/siteMetadata'
 import ListLayout from '@/layouts/ListLayoutWithTags'
 import { allBlogs } from 'contentlayer/generated'
-import tagData from 'app/tag-data.json'
-import { genPageMetadata } from 'app/seo'
+
 import { Metadata } from 'next'
 import dayjs from 'dayjs'
+import { genPageMetadata } from '../../seo'
+import tagData from '../../tag-data.json'
 
 const POSTS_PER_PAGE = 5
 
