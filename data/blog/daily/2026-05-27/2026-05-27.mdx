@@ -1,0 +1,695 @@
+---
+title: '2026-05-27 : MATLAB → Java 포팅, 결과를 어떻게 검증할 것인가'
+date: '2026-05-27'
+tags: ['daily', 'java', 'matlab', 'python', 'testing', 'porting']
+draft: false
+summary: '수치 계산 코드를 다른 언어로 옮길 때, "잘 작동한다" 가 아니라 "원본과 부동소수점 단위까지 일치한다" 를 증명해야 한다. 7단계 GNSS 파이프라인을 포팅하면서 정착시킨 검증 방법론을 정리한다.'
+authors: ['default']
+---
+
+## MATLAB → Java 포팅, 결과를 어떻게 검증할 것인가
+
+> 수치 계산 코드 검증은 "테스트가 통과한다" 가 아니라 "원본과 부동소수점 단위까지 일치한다" 가 되어야 한다.
+
+### 1. 들어가며 — 왜 unit test 만으로 안 되는가
+
+GNSS 위성 측정 보정값(DCBr) 추정 시스템을 MATLAB에서 Java(Spring Boot)로 완전 포팅하는 작업을 했다.
+7단계 파이프라인, 입력 데이터 수십 MB, 최종 결과는 41개 관측소 × 2 시스템 = 82개 DCBr 값.
+
+처음엔 JUnit 으로 가려고 했다. 그런데 문제가 있다.
+
+```ts
+@Test
+void testSatPosCalculation() {
+    double[] result = PortingUtils.computeSatPos(...);
+    assertEquals(20832.841647, result[0], 0.0001);  // 어디까지 허용?
+}
+```
+
+1. 첫 번째 문제 : `delta`(오차) 를 얼마로 잡을지가 문제다. 너무 빡빡하면 false negative(거짓 부정), 너무 느슨하면 진짜 버그를 놓친다.
+2. 두 번째 문제 : **expected value(유효한 값: 답) 를 어디서 가져올까**. MATLAB을 실행해서 콘솔에 찍은 값을 복사? 표시되는 자릿수만큼만 정밀도가 나옴. fprintf로 `%.15f` 찍어도 결국 수동 복붙이라 변수 수십 개 단위 비교는 현실적으로 불가능하다.
+3. 세 번째 문제 : **결과가 다음 결과에 영향을 주는데 어디서 문제가 생겼는지 확인이 어렵다**. 최종 결과만 비교하면 어느 단계에서 차이가 들어왔는지 모른다. 7단계 중 3단계에서 1e-3 오차가 생기면, 4~7단계는 다 영향받지만 어디가 원인인지 직접 보지 않으면 모른다.
+
+결국 다른 접근이 필요했다.
+
+<br />
+
+### 2. 핵심 아이디어 — JSON dump(파일 저장) + Python diff(비교)
+
+```
+[MATLAB]                       [Java]
+   ↓                              ↓
+jsonencode                     Jackson ObjectMapper
+   ↓                              ↓
+state_matlab.json            state_java.json
+   ↓                              ↓
+              [Python compare]
+                    ↓
+        max|Δ|, mean|Δ|, median|Δ|
+        NaN 패턴, 부호, 카운트
+```
+
+각 단계에서:
+
+- MATLAB은 `jsonencode` 로 결과 변수를 JSON 파일로 저장
+- Java는 `Jackson` 으로 동일 변수를 JSON 파일로 저장
+- Python 스크립트로 둘을 로드해서 비교
+
+JSON 이 좋은 이유:
+
+|     | **이유**            | **설명**                              |
+| --- | ------------------- | ------------------------------------- |
+| 1   | 언어 무관           | MATLAB, Java, Python 모두 native 지원 |
+| 2   | 다중 차원 보존      | 매트릭스, 배열, 중첩 구조 그대로 표현 |
+| 3   | 사람이 읽을 수 있음 | 디버깅 시 직접 열어서 값 확인 가능    |
+| 4   | 정밀도 유지         | 15자리 정도까지 보존 (텍스트 표현)    |
+
+<br />
+
+### 3. 양쪽에서 JSON 저장
+
+#### MATLAB 측
+
+```matlab
+% R2021a+ (PrettyPrint 옵션)
+jsonStr = jsonencode(state, 'PrettyPrint', true);
+
+fid = fopen('output/state_matlab.json', 'w');
+fprintf(fid, '%s', jsonStr);
+fclose(fid);
+```
+
+R2020 이하라면 `'PrettyPrint'` 옵션 빼고 사용. 어차피 diff 는 Python이 할 거라 들여쓰기 없어도 됨.
+
+#### Java 측
+
+```ts
+ObjectMapper om = new ObjectMapper()
+    .enable(SerializationFeature.INDENT_OUTPUT);
+
+Path outPath = Paths.get("output/state_java.json");
+Files.createDirectories(outPath.getParent());
+om.writeValue(outPath.toFile(), state);
+```
+
+POJO 에 `@Getter` 만 있으면 Jackson 이 알아서 직렬화한다. Lombok 쓰면 끝.
+
+#### 어느 시점에 dump 하나
+
+파이프라인을 단계별로 잘라서 **각 단계 끝나는 시점**에 dump 했다.
+
+| 단계                            | dump 대상                       |
+| ------------------------------- | ------------------------------- |
+| 1. InitSetting 빌드             | `initSetting` 전체 (설정값)     |
+| 2. ExternalData 로드            | `extData` 전체 (파일 파싱 결과) |
+| 3. State/Meas 초기화            | `state`, `meas`                 |
+| 4. collectMeasurements 1 epoch  | `meas[0]` (488개 관측치)        |
+| 5. collectMeasurements 10 epoch | `meas[0..9]` (~4889개)          |
+| 6. solveBlockBatch              | `x_block` (1534개 unknowns)     |
+| 7. CSV 출력                     | `DCBr.csv`                      |
+
+<Callout type="tip" label="핵심:">
+  각 단계에서 일치를 확인하고 다음으로 넘어갔다. 7단계 한꺼번에 비교하지 말고 한 단계씩. 어느 단계에서 차이가 생겼는지 즉시 알 수 있다.
+</Callout>
+
+<br />
+
+### 4. Python 비교 스크립트
+
+처음엔 단순한 비교 함수로 시작했다가, 반복 사용하면서 도구로 발전시켰다. 핵심 기능은 4가지:
+
+1. **자동 키 매칭** — camelCase ↔ snake_case
+2. **재귀 walk** — 어떤 깊이의 구조도 비교
+3. **다각도 통계** — max, mean, median, NaN 패턴, 부호
+4. **자동 verdict** — 오차 크기로 OK/의심/버그 자동 판정
+
+#### 자동 키 매칭 — 가장 큰 편의
+
+MATLAB과 Java는 명명 컨벤션이 다르다. 매번 매핑 테이블 만드는 게 귀찮아서 정규화 매칭으로 해결했다.
+
+```ts
+// Java keys         MATLAB keys
+// 'prnFull'    ↔   'prn_full'
+// 'rhoF1'      ↔   'rho_f1'
+// 'pr1'        ↔   'PR1'
+// 'sysTag'     ↔   'sys_tag'
+
+import re
+
+def normalize_key(s):
+    """camelCase → snake_case, 대소문자/언더스코어 무시"""
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
+    return s.lower().replace('_', '')
+
+def find_match(key, candidate_keys):
+    target = normalize_key(key)
+    for ck in candidate_keys:
+        if normalize_key(ck) == target:
+            return ck
+    return None
+```
+
+이렇게 하면 사용자가 매핑 테이블을 신경 쓸 필요가 없다.
+
+#### 실제 사용 예시
+
+```bash
+# 자동 비교 (기본)
+python3 compare_json.py state_java.json state_matlab.json
+
+# MATLAB 2D 매트릭스 reshape (뒤에서 설명)
+python3 compare_json.py --reshape 10,41 a.json b.json
+
+# 상세 분석
+python3 compare_json.py --verbose a.json b.json
+
+# CSV 비교 모드
+python3 compare_json.py --csv java.csv matlab.csv
+```
+
+실제 출력:
+
+```
+======================================================================
+  비교 결과
+======================================================================
+  Numeric values compared : 4889
+  Fields encountered      : 11
+  NaN pattern mismatch    : 0
+  Structural mismatch     : 0
+
+  field                  max |Δ|     mean |Δ|       median    count
+  ──────────────────────────────────────────────────────────────────
+  rhoF1               3.7253e-09   6.2025e-10   0.0000e+00     4889
+  rhoF2               3.7253e-09   6.0272e-10   0.0000e+00     4889
+  f                   2.6645e-15   3.1474e-17   0.0000e+00     4889
+  el                  1.3323e-15   1.6327e-17   0.0000e+00     4889
+  azi                 8.8818e-16   1.7894e-17   0.0000e+00     4889
+  gs                  0.0000e+00   0.0000e+00   0.0000e+00     4889
+  prnFull             0.0000e+00   0.0000e+00   0.0000e+00     4889
+  pr1                 0.0000e+00   0.0000e+00   0.0000e+00     4889
+  pr2                 0.0000e+00   0.0000e+00   0.0000e+00     4889
+  cp1                 0.0000e+00   0.0000e+00   0.0000e+00     4889
+  cp2                 0.0000e+00   0.0000e+00   0.0000e+00     4889
+
+  최대 절대 오차: 3.7253e-09
+  판정: ✓ 부동소수점 노이즈 (OK)
+```
+
+`gs`, `prn`, `PR1`, `PR2` 같은 **입력 그대로 통과한 값은 정확히 0**. 계산이 들어간 값(`rho`, `el`, `azi`, `F`)은 부동소수점 노이즈 수준(1e-9 ~ 1e-16). **이 정도면 알고리즘 동등** 이라고 결론.
+
+<br />
+
+### 5. 실패 사례 1 — MATLAB jsonencode의 column-major
+
+이게 가장 헤맨 부분이다. 10 epoch까지 돌린 데이터를 비교하려는데:
+
+```
+Java  outer len: 10
+MATLAB outer len: 410
+Java[0] len (stations): 41
+MATLAB[0] len: 12
+```
+
+Java는 `[10][41][~12]` 의 3D 중첩 배열이 나왔는데, MATLAB은 410개 짜리 1D 배열이 나옴.
+
+처음에는 "MATLAB 코드가 잘못 짜였나?" 의심했는데, 알고 보니 **MATLAB cell 2D 매트릭스의 jsonencode 가 column-major 로 flatten** 되는 거였다.
+
+```matlab
+meas = cell(10, 41);   % 10 epoch × 41 station
+jsonStr = jsonencode(meas);
+% 결과: 410 원소의 1D JSON 배열
+% 순서: meas{1,1}, meas{2,1}, ..., meas{10,1}, meas{1,2}, meas{2,2}, ...
+```
+
+MATLAB의 메모리 레이아웃이 column-major (Fortran 스타일) 라서 그렇다. jsonencode 가 이걸 그대로 직렬화한다.
+
+해결은 Python 에서 reshape:
+
+<CodeCompare>
+  <CodePanel type="bad" title="naive 비교 — 차원 불일치">
+    ```python
+    m_flat = json.load(open('matlab.json'))
+    # 410개 1D — Java는 [10][41]
+
+    for e_idx, e_data in enumerate(j):
+        for s_idx, s_data in enumerate(e_data):
+            # m_flat[?] — 인덱스 어떻게 만들지?
+            # 그냥 m_flat[e_idx][s_idx]는 IndexError
+            ...
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="column-major → row-major">
+    ```python
+    def reshape_column_major(flat, dims):
+        rows, cols = dims
+        result = [[None] * cols
+          for _ in range(rows)]
+        for r in range(rows):
+            for c in range(cols):
+                # MATLAB column-major
+                idx = c * rows + r
+                result[r][c] = flat[idx]
+        return result
+
+    m = reshape_column_major(m_flat, (10, 41))
+    # 이제 m[e][s] 가 Java j[e][s]와 같은 위치
+    ```
+
+  </CodePanel>
+</CodeCompare>
+
+검증:
+
+- `m_flat[0]` 의 gs = 345600 (epoch 1)
+- `m_flat[1]` 의 gs = 345630 (epoch 2)
+- `m_flat[10]` 의 gs = 345600 (epoch 1, station 2)
+- `m_flat[409]` 의 gs = 345870 (epoch 10, station 41)
+
+전형적인 column-major 패턴. 알고 나면 당연하지만, 모르면 1시간 헤맨다.
+
+<Callout type="error" label="진짜 함정:">
+  MATLAB JSON 출력은 차원이 같아 보여도 메모리 레이아웃이 다르다. 비교 전에 반드시 양쪽 dim/shape 확인.
+</Callout>
+
+<br />
+
+### 6. 실패 사례 2 — Set.of 순서 때문에 컬럼 swap
+
+CSV 결과 비교하다가 발견한 황당한 버그.
+
+Java 코드에서 사용 시스템을 이렇게 선언했다:
+
+```ts
+private static final Set<String> use_SYS = Set.of("G", "E");
+```
+
+JDK 9+ 의 `Set.of()` 가 immutable Set 을 만들어주는데, **iteration 순서가 의도적으로 randomize** 된다. JVM 실행마다 G,E 순서일 수도 있고 E,G 순서일 수도 있다.
+
+결과:
+
+- 어떤 실행에서는 CSV 파일이 `2026036_01D_01D_GE_DCBr.csv`
+- 다른 실행에서는 `2026036_01D_01D_EG_DCBr.csv`
+
+파일명만의 문제가 아니다. **x 벡터 내 DCBr 컬럼 배치도 같은 useSys iteration 순서에 의존** 한다:
+
+```ts
+for (String s : useSys) {
+    dcbrStartIdx.put(s, numVtec + sysCounter * numSta);
+    sysCounter++;
+}
+```
+
+이 결과로 어떤 실행에서는 idx 1452~1492 가 G, 다음 실행에서는 같은 idx 가 E. CSV 헤더는 G/E 순서로 출력되지만 값은 swap된 상태일 수 있다.
+
+<CodeCompare>
+  <CodePanel type="bad" title="기존 — 순서 미보장">
+    ```ts
+    private static final Set<String> use_SYS
+      = Set.of("G", "E");
+    // JVM 실행마다 다를 수 있음
+    // → CSV 컬럼 swap 발생
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="개선 — LinkedHashSet">
+    ```ts
+    private static final Set<String> use_SYS
+      = new LinkedHashSet<>(
+          List.of("G", "E")
+        );
+    // 또는 더 명시적으로
+    private static final List<String> use_SYS
+      = List.of("G", "E");
+    ```
+  </CodePanel>
+</CodeCompare>
+
+<Callout type="error" label="치명적이었던 점:">
+  이 한 가지 때문에 CSV 비교 결과를 신뢰 못 하던 시간이 며칠 됐다. 값은 다 맞는데 컬럼 라벨이 swap된 상태라 "MATLAB이랑 값이 아예 다른데?" 라고 의심하면서 알고리즘부터 다시 봤다.
+</Callout>
+
+<br />
+
+### 7. 실패 사례 3 — UTF-8 인코딩으로 파일 못 읽음
+
+GNSS Bias-SINEX 파일을 파싱하다가:
+
+```
+java.nio.charset.MalformedInputException: Input length = 1
+    at java.base/sun.nio.cs.StreamDecoder.implRead(...)
+    at org.kpop.kpopdcbrestm.util.BiaReader.readBia(BiaReader.java:28)
+```
+
+처음엔 UTF-8 로 열었다. ASCII만 있을 거라 생각했는데, 일부 안테나 모델명이나 코멘트에 non-ASCII 바이트가 섞여 있었다.
+
+<CodeCompare>
+  <CodePanel type="bad" title="UTF-8 — 실패">
+    ```ts
+    Files.newBufferedReader(
+      biaFile,
+      StandardCharsets.UTF_8
+    )
+    // MalformedInputException
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="ISO_8859_1 — 안전">
+    ```ts
+    Files.newBufferedReader(
+      biaFile,
+      StandardCharsets.ISO_8859_1
+    )
+    // 1바이트 → 1 char 매핑
+    // 절대 실패하지 않음
+    ```
+  </CodePanel>
+</CodeCompare>
+
+`ISO_8859_1` 은 1바이트를 그대로 char에 매핑하는 인코딩이라 **절대 실패하지 않는다**. ASCII 부분 파싱에는 문제없고, 우리는 어차피 column position 기반 substring 만 하니까 안전.
+
+GNSS/측지 데이터 파일들 (ANTEX, BIA, EOP, SP3, RINEX) 은 다 이 패턴으로 통일했다.
+
+<br />
+
+### 8. 오차 크기로 버그 위치 좁히기
+
+검증 자동화 후엔 차이가 어느 정도인지로 버그 위치를 추정할 수 있다.
+
+| 차이 크기         | 해석                                  | 액션        |
+| ----------------- | ------------------------------------- | ----------- |
+| **정확히 0**      | 입력이 그대로 통과 (해시 가능)        | OK ✓        |
+| **1e-16 ~ 1e-14** | machine epsilon, 부동소수점 한계      | OK ✓        |
+| **1e-12 ~ 1e-9**  | 연산 순서 차이 (norm, dot product 등) | OK ✓ (보통) |
+| **1e-9 ~ 1e-6**   | 알고리즘 미세 차이 (수렴 임계값 등)   | 의심 ⚠️     |
+| **1e-6 ~ 1e-3**   | 버그 가능성 높음                      | 조사 🔍     |
+| **1e-3 이상**     | 인덱스/부호/단위 오류 거의 확실       | 버그 🐛     |
+
+실전에서 만난 케이스:
+
+- **1e-9 차이가 rho 에서 발생**: 위성-수신기 거리 계산 시 norm 계산 순서가 미세하게 달라서 발생. 정상.
+- **1e-3 차이가 elevation 에서 발생**: 좌표 변환 행렬 부호 오류였음. R 행렬을 잘못 옮긴 거.
+- **0.5 차이가 DCBr 에서 발생**: rank-deficient 영역. MATLAB 은 minimum-norm 해, Java 는 Tikhonov 정규화 해. 둘 다 valid 한 해석이지만 알고리즘적으로 다름.
+
+<Callout type="tip" label="자동 verdict 활용:">
+  Python 스크립트에 오차 크기별 verdict 함수를 넣어두면, 매번 표 보고 판정할 필요 없이 ✓/⚠/🐛 로 자동 표시된다. 빠른 회귀 테스트에 유용.
+</Callout>
+
+<br />
+
+### 9. 비교 보조 도구들
+
+#### NaN 패턴 일치 체크
+
+관측 없는 station 은 양쪽 모두 NaN 이어야 한다. 한쪽만 NaN 이면 데이터 흐름이 다른 거다.
+
+```python
+j_nan_mask = [(v != v) for v in j_values]
+m_nan_mask = [(v != v) for v in m_values]
+nan_match = sum(a == b for a, b in zip(j_nan_mask, m_nan_mask))
+print(f'NaN pattern match: {nan_match} / {len(j_values)}')
+```
+
+#### 부호 일치 체크
+
+부호가 다르면 정말 다른 답을 내고 있는 거다.
+
+```python
+sign_match = sum(
+    1 for j, m in zip(jv, mv)
+    if (j > 0) == (m > 0) or (j == 0 and m == 0)
+)
+print(f'Sign match: {sign_match} / {len(jv)}')
+```
+
+#### Worst-case 위치 찾기
+
+차이가 가장 큰 10개 위치를 보면 어떤 패턴으로 틀리는지 보인다.
+
+```python
+worst = sorted(
+    enumerate(zip(jv, mv)),
+    key=lambda x: -abs(x[1][0] - x[1][1])
+)[:10]
+for i, (j, m) in worst:
+    print(f'idx={i}: java={j:.4f}, matlab={m:.4f}, diff={j-m:.4f}')
+```
+
+- worst-case 가 모두 격자 가장자리에 몰려있으면 → rank-deficient 영역. 정상.
+- worst-case 가 특정 시스템(G/E/C/R) 에 몰려있으면 → 그 시스템 처리에 버그.
+- worst-case 가 모든 곳에 균등하게 분포 → 전반적 알고리즘 차이.
+
+<br />
+
+### 10. 엑셀로 시각화
+
+최종 CSV 결과는 엑셀이 가장 빠르다.
+
+1. Java CSV → 시트1
+2. MATLAB CSV → 시트2
+3. 시트3 에 차이 셀:
+
+```excel
+=Sheet1!B2 - Sheet2!B2
+```
+
+또는 NaN 포함 비교:
+
+```excel
+=IF(OR(B2="NaN", C2="NaN"),
+    IF(B2=C2, "NaN match", "NaN diff"),
+    ROUND(B2 - C2, 4))
+```
+
+조건부 서식으로 큰 차이만 빨강 표시:
+
+- 0.1 이상 → 빨강
+- 0.01 이상 → 노랑
+- 그 외 → 표시 없음
+
+이렇게 하면 어디가 문제인지 한눈에 보인다. station 수십 개를 일일이 grep 할 필요 없음.
+
+<br />
+
+### 11. 전체 검증 스크립트
+
+다 합친 재사용 가능한 도구. 표준 라이브러리만 사용 (Python 3.7+).
+
+```python
+#!/usr/bin/env python3
+"""MATLAB vs Java JSON 비교 도구"""
+import argparse
+import json
+import re
+import statistics
+from collections import defaultdict
+
+
+# ─────────────────────────────────────────────
+# 자동 키 매칭
+# ─────────────────────────────────────────────
+def normalize_key(s):
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
+    return s.lower().replace('_', '')
+
+def find_match(key, candidate_keys):
+    target = normalize_key(key)
+    for ck in candidate_keys:
+        if normalize_key(ck) == target:
+            return ck
+    return None
+
+
+# ─────────────────────────────────────────────
+# Helper
+# ─────────────────────────────────────────────
+def is_nan(v):
+    if v is None or isinstance(v, bool):
+        return False
+    try:
+        return v != v
+    except TypeError:
+        return False
+
+def is_number(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+def reshape_column_major(flat, dims):
+    rows, cols = dims
+    if len(flat) != rows * cols:
+        raise ValueError(f'길이 불일치: {len(flat)} vs {rows*cols}')
+    result = [[None] * cols for _ in range(rows)]
+    for r in range(rows):
+        for c in range(cols):
+            result[r][c] = flat[c * rows + r]
+    return result
+
+
+# ─────────────────────────────────────────────
+# 비교 로직
+# ─────────────────────────────────────────────
+class ComparisonResult:
+    def __init__(self):
+        self.diffs = defaultdict(list)
+        self.values = defaultdict(list)
+        self.num_compared = 0
+        self.nan_mismatch = []
+        self.unmatched_keys = []
+        self.structural_mismatch = []
+
+    def walk(self, jv, mv, path=''):
+        if isinstance(jv, dict) and isinstance(mv, dict):
+            self._walk_dict(jv, mv, path)
+        elif isinstance(jv, list) and isinstance(mv, list):
+            self._walk_list(jv, mv, path)
+        elif is_number(jv) and is_number(mv):
+            self._compare_number(jv, mv, path)
+        elif is_nan(jv) and is_nan(mv):
+            return
+        elif is_nan(jv) != is_nan(mv):
+            self.nan_mismatch.append(path)
+        elif type(jv) is not type(mv):
+            self.structural_mismatch.append(
+                f'{path}: {type(jv).__name__} != {type(mv).__name__}'
+            )
+
+    def _walk_dict(self, jd, md, path):
+        m_keys = list(md.keys())
+        for jk, jv in jd.items():
+            mk = find_match(jk, m_keys)
+            if mk is None:
+                self.unmatched_keys.append(f'{path}/{jk}')
+                continue
+            new_path = f'{path}/{jk}' if path else jk
+            self.walk(jv, md[mk], new_path)
+
+    def _walk_list(self, jl, ml, path):
+        if len(jl) != len(ml):
+            self.structural_mismatch.append(
+                f'{path}: len {len(jl)} != {len(ml)}'
+            )
+        for i, (ji, mi) in enumerate(zip(jl, ml)):
+            self.walk(ji, mi, f'{path}[{i}]')
+
+    def _compare_number(self, jv, mv, path):
+        if is_nan(jv) and is_nan(mv): return
+        if is_nan(jv) != is_nan(mv):
+            self.nan_mismatch.append(path)
+            return
+        field = re.sub(r'\[\d+\]', '', path).split('/')[-1] or '(root)'
+        d = abs(jv - mv)
+        self.diffs[field].append(d)
+        self.values[field].append((jv, mv))
+        self.num_compared += 1
+
+    def verdict(self, max_diff):
+        if max_diff == 0:           return '✓ 완전 일치'
+        elif max_diff < 1e-14:      return '✓ machine epsilon'
+        elif max_diff < 1e-9:       return '✓ 부동소수점 노이즈'
+        elif max_diff < 1e-6:       return '⚠ 알고리즘 미세 차이'
+        elif max_diff < 1e-3:       return '🔍 버그 가능성'
+        else:                       return '🐛 인덱스/부호/단위 오류 의심'
+
+    def print_summary(self):
+        print(f'\nNumeric compared: {self.num_compared}')
+        print(f'NaN mismatch    : {len(self.nan_mismatch)}')
+        print(f'Unmatched keys  : {len(self.unmatched_keys)}')
+
+        if not self.diffs:
+            return
+
+        sorted_fields = sorted(
+            self.diffs.items(),
+            key=lambda kv: -max(kv[1])
+        )
+        for f, ds in sorted_fields:
+            mx = max(ds)
+            mn = statistics.mean(ds)
+            md = statistics.median(ds)
+            print(f'  {f:<14s} max={mx:.4e}  mean={mn:.4e}  median={md:.4e}  n={len(ds)}')
+
+        max_overall = max(max(ds) for ds in self.diffs.values())
+        print(f'\n판정: {self.verdict(max_overall)}')
+
+
+# ─────────────────────────────────────────────
+# 메인
+# ─────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('java_file')
+    parser.add_argument('matlab_file')
+    parser.add_argument('--reshape', default='', help='예: "10,41"')
+    args = parser.parse_args()
+
+    with open(args.java_file) as f:   j = json.load(f)
+    with open(args.matlab_file) as f: m = json.load(f)
+
+    if args.reshape:
+        dims = tuple(int(x) for x in args.reshape.split(','))
+        m = reshape_column_major(m, dims)
+
+    result = ComparisonResult()
+    result.walk(j, m)
+    result.print_summary()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+<Callout type="tip" label="이거 한 스크립트로:">
+  4889개 관측치 × 11개 필드 = 53,779개 값 비교가 0.5초. 매 단계 dump 하고 이거 돌리는 흐름이 정착되니까 포팅 속도가 확연히 빨라졌다.
+</Callout>
+
+<br />
+
+### 12. 단계별 검증 결과 (실제 기록)
+
+GNSS DCBr 시스템 포팅 시 7단계 검증 결과:
+
+| 단계                              | 비교 대상 수   | 최대 \|Δ\|        | 판정                   |
+| --------------------------------- | -------------- | ----------------- | ---------------------- |
+| 1. InitSetting                    | 83 numeric     | 0                 | ✓ 완전 일치            |
+| 2. ExternalData                   | 6,448,815      | 1.0 (validStaIdx) | ✓ 의도된 0/1-base 차이 |
+| 3. State / Meas 초기화            | 1,475          | 0                 | ✓                      |
+| 4. collectMeasurements (1 epoch)  | 488 obs × 11   | 3.7e-9 (rho)      | ✓ FP 노이즈            |
+| 5. collectMeasurements (10 epoch) | 4,889 obs × 11 | 3.7e-9            | ✓                      |
+| 6. solveBlockBatch x_block        | 1,534          | 0.05 (DCBr)       | ✓ Tikhonov 차이        |
+| 7. 최종 CSV (DCBr)                | 41 sta × 2 sys | 0.05 ns           | ✓ 측정 노이즈 수준     |
+
+각 단계에서 통과를 확인하고 다음으로 넘어갔다.
+
+만약 7단계 끝나고서야 비교했다면, 어디서 차이가 들어왔는지 다시 거슬러 올라가야 했을 거다. **단계별 검증의 가치는 디버깅 시간 단축에 있다.**
+
+<br />
+
+### 13. 정리 — 검증 체크리스트
+
+수치 계산 코드 포팅 시 적용 가능한 일반론:
+
+- [ ] 양쪽 언어에서 단계별로 JSON dump
+- [ ] 자동 키 매칭 도구 사용 (camelCase ↔ snake_case)
+- [ ] MATLAB 2D 매트릭스는 **column-major** 인지 인지 (reshape 필수)
+- [ ] 통계 비교: max, mean, median, NaN 패턴, 부호
+- [ ] 오차 크기로 버그 위치 추정 (1e-14 ~ 1e-3 구간별 의미 다름)
+- [ ] 큰 차이 발견 시 worst-case 위치 찾아 패턴 파악
+- [ ] 최종 CSV 는 엑셀로 시각화 + 조건부 서식
+- [ ] 일관성 확인: `Set.of()` 금지, `LinkedHashSet`/`List` 사용
+- [ ] 파일 인코딩: GNSS/측지 데이터는 `ISO_8859_1`
+
+<br />
+
+### 마치며
+
+"잘 작동하는 것" 과 "원본과 동등한 것" 은 다른 문제다. 수치 계산 코드 포팅의 진짜 어려움은 후자에 있다.
+
+이 방법론을 정착시킨 후엔 포팅 작업이 훨씬 편해졌다. 매 단계마다 "MATLAB과 1e-9 이내" 라는 명확한 합격 기준이 있고, 어긋나면 즉시 원인 추정 가능. 결과적으로 1.6M × 1.5K sparse least-squares 시스템을 **MATLAB과 mean 0.01 ns 정밀도로 일치** 까지 끌어올렸다.
+
+<Callout type="tip" label="핵심 메시지:">
+  수치 계산 코드 검증은 "테스트가 통과한다" 가 아니라 "원본과 부동소수점 단위까지 일치한다" 가 되어야 한다. 단계별 dump + 자동 비교 도구만 잘 만들어두면 도달 가능.
+</Callout>
