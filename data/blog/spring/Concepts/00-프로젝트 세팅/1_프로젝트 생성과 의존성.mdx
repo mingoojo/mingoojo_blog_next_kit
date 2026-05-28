@@ -1,0 +1,217 @@
+---
+title: '[00-01] Spring Boot 생성과 build.gradle, resource'
+date: '2026-05-28'
+tags: ['spring', 'spring-boot', 'gradle', 'yaml', 'configuration', 'backend']
+draft: false
+summary: '스프링부트로 프로젝트를 생성하고 생성후 가장 먼저하게 되는 의존성 세팅 및 resource폴더에 대한 내용이다.'
+authors: ['default']
+---
+
+## 인트로
+
+> Spring Initializr로 프로젝트를 생성하면 코드 한 줄 안 썼는데도 폴더와 파일이 잔뜩 생긴다. 이 글에서는 각 폴더와 파일이 왜 거기 있고 무슨 역할을 하는지 정리한다.
+
+[파일 깃헙 주소](https://github.com/mingoojo/mingoojo_blog_next_kit/tree/main/playground/2026-05-27)
+
+### 1. Gradle이란 — "빌드 도구"가 하는 일
+
+핵심 한 줄: **소스 코드** → 실행 가능한 `jar` 파일로 만드는 자동화 도구. 동시에 의존성 관리 + 컴파일 + 테스트 + 패키징을 다 한다.
+
+#### 1-1. Gradle이 실제로 해주는 일 5가지
+
+| 역할          | 설명                                                                   |
+| ------------- | ---------------------------------------------------------------------- |
+| 의존성 관리   | spring-boot-starter-web 한 줄 쓰면 메이븐 센트럴에서 jar 자동 다운로드 |
+| 컴파일        | .java → .class                                                         |
+| 테스트 실행   | src/test/의 JUnit 테스트 실행                                          |
+| 패키징        | 모든 의존성 + 내 코드 + 매니페스트 → 실행 가능한 단일 jar              |
+| 태스크 자동화 | ./gradlew bootRun, ./gradlew test 같은 명령 정의                       |
+
+#### 1-2. 옛날에는 어떻게 했나?
+
+- 옛날: `javac *.java` → `java -cp` ... 으로 직접 컴파일, 라이브러리는 jar 하나하나 다운받아 classpath에 추가
+- 라이브러리 A가 B를 필요로 하고, B가 C를 필요로 하면? → 손으로 추적 불가능
+- 그래서 Maven → Gradle 순서로 빌드 도구가 등장
+
+#### 1-3. Gradle vs Maven (간단 비교)
+
+|           | Maven         | Gradle                                            |
+| --------- | ------------- | ------------------------------------------------- |
+| 설정 파일 | pom.xml (XML) | build.gradle (Groovy) / build.gradle.kts (Kotlin) |
+| 문법      | 선언형        | 스크립트형(코드처럼 작성 가능)                    |
+| 속도      | 느림          | 빠름 (증분 빌드, 빌드 캐시)                       |
+| 현재 추세 | 레거시/기업   | 신규 프로젝트 표준 (특히 Spring Boot)             |
+
+<Callout type="tip" label="Gradle:">
+  build.gradle이란 설계도를 읽고 의존성+컴파일+패키징을 실제로 수행하는 일꾼.
+</Callout>
+
+### 2. Gradle 관련 파일/폴더
+
+#### 2-1. build.gradle — 이 프로젝트가 무엇으로 만들어졌는지의 명세서
+
+```gradle
+
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.0.6'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'org.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    // ...
+}
+```
+
+**주요 블록:**
+
+- `plugins {} `— 어떤 빌드 기능을 켤지 (java, spring-boot)
+- `group / version` — 이 프로젝트의 좌표 (다른 프로젝트가 의존성으로 가져갈 때 쓰는 식별자)
+- `java { toolchain }` — 어떤 JDK로 빌드할지 명시 (팀원마다 JDK 버전 달라도 자동 다운로드)
+- `repositories {}` — 의존성을 어디서 다운받을지 (Maven Central이 사실상 표준)
+- `dependencies {}` — 라이브러리 목록 → 다음 글의 주제 (개념-2)
+
+#### 2-2. settings.gradle — 프로젝트 식별
+
+```gradle
+rootProject.name = 'demo'
+```
+
+- 프로젝트 이름 정의
+- 멀티 모듈(예: core/, api/, batch/ 같이 모듈이 여러 개) 프로젝트일 때 include 'core' 식으로 모듈 등록
+- 지금은 단일 모듈이라 한 줄뿐
+
+#### 2-3. gradle/wrapper/ — "Gradle Wrapper"
+
+팀원마다 Gradle을 다른 버전으로 설치해 두면 빌드 결과가 달라질 수 있음. 그래서 프로젝트가 사용할 Gradle 버전을 코드 저장소에 박아둔다.
+
+- gradle-wrapper.properties — 어떤 버전 쓸지 (현재 9.4.1)
+- gradle-wrapper.jar — 그 버전을 다운로드해서 실행해주는 작은 부트스트래퍼
+- gradlew / gradlew.bat — 실제로 사용자가 실행하는 스크립트
+
+그래서 gradle 명령 대신 ./gradlew 명령을 써야 한다. **(시스템 Gradle이 아니라 프로젝트에 박힌 버전을 쓰겠다는 의미)**
+
+**자주 쓰는 명령:**
+| 명령 | 의미 |
+| ---------------------- | -------------------------- |
+| ./gradlew build | 컴파일 + 테스트 + jar 생성 |
+| ./gradlew bootRun | Spring Boot 앱 실행 |
+| ./gradlew test | 테스트만 실행 |
+| ./gradlew clean | build/ 폴더 삭제 |
+| ./gradlew dependencies | 의존성 트리 출력 |
+
+#### 2-4. .gradle/ vs build/ (gitignore 대상)
+
+- `.gradle/` — Gradle 자체의 로컬 캐시 (다음 빌드 빠르게 하려고)
+- `build/` — 빌드 결과물. 컴파일된 .class, 생성된 jar, 테스트 리포트 등
+- 둘 다 언제든 지워도 됨 → ./gradlew clean 이 build/를 지워줌
+- `.gitignore`에 둘 다 들어가 있어야 정상
+
+### 3. src/main/resources/ — 코드가 아닌 모든 것
+
+자바 코드는 `src/main/java/`에, 그 외 모든 파일(설정/이미지/HTML/SQL...)은 `src/main/resources/`에 둔다.
+
+이 폴더에 들어간 파일은 빌드 시 classpath 루트에 복사된다. 즉 코드에서 `getResourceAsStream("/application.yml")` 같이 접근 가능.
+
+#### 3-1. 기본 하위 폴더
+
+| 폴더                 | 용도               | Spring Boot 규약           |
+| -------------------- | ------------------ | -------------------------- |
+| resources/ 직속      | 설정 파일 등       | application.yml은 여기     |
+| resources/static/    | 정적 웹 리소스     | / 경로로 자동 서빙         |
+| resources/templates/ | 서버 사이드 템플릿 | Thymeleaf 등이 여기서 읽음 |
+
+#### 3-2. application.yml — Spring Boot 설정의 중심
+
+역할: 코드 바깥에서 바꿀 수 있는 모든 설정값을 모아두는 곳.
+
+- DB 접속 정보
+- 로그 레벨
+- 서버 포트
+- 외부 API 키
+- 라이브러리 동작 옵션
+
+**예시:**
+
+```yml
+spring:
+  application:
+    name: demo
+  datasource:
+    url: jdbc:postgresql://localhost:5432/demo
+    username: postgres
+    password: 본인_비번
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+```
+
+핵심은 "코드를 바꾸지 않고도 동작을 바꿀 수 있다" 는 점. 운영/개발 환경에서 같은 jar에 다른 yml을 주입해서 다르게 동작시킬 수 있음.
+
+#### 3-3. static/ — 정적 리소스 자동 서빙
+
+`static/` 안에 둔 파일은 별도 설정 없이 웹에서 바로 접근 가능.
+
+| 파일 위치              | 접근 URL                              |
+| ---------------------- | ------------------------------------- |
+| static/index.html      | http://localhost:8080/ (인덱스 자동)  |
+| static/css/style.css   | http://localhost:8080/css/style.css   |
+| static/images/logo.png | http://localhost:8080/images/logo.png |
+
+Spring Boot가 기본 인식하는 정적 경로 4곳 (우선순위 순):
+
+1. classpath:/META-INF/resources/
+2. classpath:/resources/
+3. classpath:/static/ ← 가장 흔히 씀
+4. classpath:/public/
+
+#### 3-4. templates/ — 서버 사이드 렌더링
+
+REST API 위주면 거의 안 쓰지만, `Thymeleaf/Mustache` 같은 템플릿 엔진을 추가하면 여기서 `.html`을 읽어서 서버에서 HTML을 만들어 응답. (SSR)
+
+### 4. application.yml vs application.properties — 둘의 차이
+
+Spring Boot는 둘 다 지원하고, 둘 다 있으면 properties가 우선한다. 하나만 쓰는 게 원칙.
+
+#### 4-1. 비교표
+
+| 항목             | .properties                                 | .yml                                |
+| ---------------- | ------------------------------------------- | ----------------------------------- |
+| 문법             | key=value 한 줄씩                           | 들여쓰기로 계층 표현                |
+| 가독성           | 키가 길어지면 반복됨 (spring.datasource.\*) | 계층이 한눈에 보임                  |
+| 리스트           | app.servers[0]=a 식으로 어색함              | - a 로 자연스러움                   |
+| 공백/들여쓰기    | 자유                                        | 엄격 (탭 금지, 스페이스만)          |
+| 여러 프로파일    | 파일 분리 (application-dev.properties)      | 한 파일에 ---로 구분도 가능         |
+| 주석             | #                                           | #                                   |
+| 민감한 문자 처리 | 단순                                        | 콜론·따옴표·이스케이프 신경 써야 함 |
+
+#### 4-2. 언제 어느 쪽을 쓰나?
+
+| 상황                                      | 추천                   |
+| ----------------------------------------- | ---------------------- |
+| 신규 Spring Boot 프로젝트                 | yml (사실상 표준)      |
+| 단순 키 5~10개 짜리 라이브러리/모듈       | properties도 무난      |
+| Spring Cloud Config, Kubernetes ConfigMap | yml (계층형이 잘 맞음) |
+| 레거시 + 자동 생성 도구 호환성 중요       | properties             |
+
+<Callout type="tip" label="결론:">
+  모르면 yml. 단, 들여쓰기 깨지면 묵묵히 무시된다는 함정이 있으니 IDE에서 yml 인식되는지 꼭 확인.
+</Callout>

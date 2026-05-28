@@ -6,14 +6,12 @@ draft: false
 summary: Spring에서 Redis를 연결하고 RedisConfig파일을 설정하는 방법 정리. 환경 변수 세팅 및 데이터를 호출하는 방법을 설명. 
 ---
 
-
-{/* 웹 애플리케이션에서 **로그인 상태 관리**를 구현할 때 가장 전통적이면서도 안정적인 방법은 **세션(Session) 기반 인증**이다.
+{/\* 웹 애플리케이션에서 **로그인 상태 관리**를 구현할 때 가장 전통적이면서도 안정적인 방법은 **세션(Session) 기반 인증**이다.
 
 이번 글에서는 **Spring Security**를 활용해 세션 방식 로그인/로그아웃을 구현하고,
 권한이 필요한 API에 접근했을 때 어떻게 인증/인가를 처리하는지 정리했다.
 
-아래는 세션방식의 로그인의 워크 플로우를 보여준다. */}
-
+아래는 세션방식의 로그인의 워크 플로우를 보여준다. \*/}
 
 Spring Boot 애플리케이션에서 **Redis를 사용하는 가장 기본적인 방법**은
 `spring-boot-starter-data-redis` 의존성을 추가하고, RedisTemplate을 직접 `Bean`으로 등록해 사용하는 방식이다.
@@ -21,6 +19,7 @@ Spring Boot 애플리케이션에서 **Redis를 사용하는 가장 기본적인
 이번 글에서는 디펜던시 추가 → 설정 파일 작성 → Config 클래스 구현 → 사용 예시 → 운영 팁까지 정리한다.
 
 ---
+
 ### 1. 디펜던시 추가
 
 Gradle 기준으로 `spring-boot-starter-data-redis`만 추가하면 `Lettuce` 클라이언트를 통해 Redis에 연결할 수 있다.
@@ -34,6 +33,7 @@ dependencies {
 ```
 
 ---
+
 ### 2. application.yml
 
 Redis 접속 정보를 외부 설정으로 분리한다.
@@ -50,15 +50,16 @@ redis-monitor:
 
 운영 환경에서는 `host`, `port`, `password`를 환경변수로 관리하는 것이 좋다.
 
-
 ---
+
 ### 3. RedisConfig 클래스 작성
+
 RedisConnectionFactory와 RedisTemplate을 직접 Bean으로 등록한다.<br/>
 여기서는 문자열 전용 템플릿과 JSON 직렬화 템플릿을 각각 만든다.
 
 1. **파일트리 구성**
-    - app / config / RedisConfig.java 파일 생성 
-    
+   - app / config / RedisConfig.java 파일 생성
+
 ```bash
 app/
  └─ src/main/java/
@@ -67,7 +68,6 @@ app/
        └─ config/
           └─ RedisConfig.java
 ```
-
 
 2. **RedisConfig.java 파일 작성**
 
@@ -110,9 +110,9 @@ public class RedisConfig {
     }
 }
 ```
-    
 
 ---
+
 ### 4. 사용 예시
 
 등록한 RedisTemplate을 주입받아 사용할 수 있다.
@@ -150,12 +150,7 @@ public class StationDataImportScheduler implements CommandLineRunner {
 }
 ```
 
-**REDIS 내장함수 종류**
-    - opsForValue() : 문자열 단일 값 (key-value)
-	- opsForHash() : 해시(Hash)
-	- opsForList() : 리스트(List)
-	- opsForSet() : 집합(Set)
-	- opsForZSet() : 정렬된 집합(Sorted Set)
+**REDIS 내장함수 종류** - opsForValue() : 문자열 단일 값 (key-value) - opsForHash() : 해시(Hash) - opsForList() : 리스트(List) - opsForSet() : 집합(Set) - opsForZSet() : 정렬된 집합(Sorted Set)
 
 ---
 

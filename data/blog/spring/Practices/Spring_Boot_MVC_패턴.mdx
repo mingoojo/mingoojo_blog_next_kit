@@ -12,20 +12,15 @@ MVC 패턴(Model–View–Controller)은 소프트웨어 아키텍처 패턴 중
 
 ### 1. MVC 구조 개요
 
-| 구성요소                      | 역할                          |예시                          |
-| --------------------------- | ---------------------------- |---------------------------- |
-| MODEL                       | 데이터 및 비지니스 로직 관리        |DB 엔티티, DAO, 서비스 클래스     |
-| VIEW                        | 사용자에게 보여지는 UI            |HTML, JSP, React 컴포넌트 등    |
-| CONTROLLER                  | 사용자 요청을 받아 처리 흐름 제어    |Spring Controller, Express Router 등 |
+| 구성요소   | 역할                              | 예시                                 |
+| ---------- | --------------------------------- | ------------------------------------ |
+| MODEL      | 데이터 및 비지니스 로직 관리      | DB 엔티티, DAO, 서비스 클래스        |
+| VIEW       | 사용자에게 보여지는 UI            | HTML, JSP, React 컴포넌트 등         |
+| CONTROLLER | 사용자 요청을 받아 처리 흐름 제어 | Spring Controller, Express Router 등 |
 
 ![MVC Diagram](/static/images/mvc_pattern.png)
 
-
-**동작흐름**
-    1. `사용자 요청(Request)` : 사용자가 브라우저에서 URL을 입력하거나 트리거를 통해 Contoller로 요청을 전달
-	2. `Contoller처리` : Controller는 해당 요청을 어떤 로직으로 처리할지 결정하고, 필요한 데이터를 Model에서 가져옴
-	3. `Model동작` : Model은 DB나 비지니스 로직을 처리하고 결과 데이터를 Controller에게 반환함.
-	4. `View 반환` : Contoller는 받은 데이터를 View에 전달 > View는 최종적으로 사용자에게 응답을 렌더링
+**동작흐름** 1. `사용자 요청(Request)` : 사용자가 브라우저에서 URL을 입력하거나 트리거를 통해 Contoller로 요청을 전달 2. `Contoller처리` : Controller는 해당 요청을 어떤 로직으로 처리할지 결정하고, 필요한 데이터를 Model에서 가져옴 3. `Model동작` : Model은 DB나 비지니스 로직을 처리하고 결과 데이터를 Controller에게 반환함. 4. `View 반환` : Contoller는 받은 데이터를 View에 전달 > View는 최종적으로 사용자에게 응답을 렌더링
 
 <br/>
 
@@ -50,7 +45,6 @@ MVC 패턴(Model–View–Controller)은 소프트웨어 아키텍처 패턴 중
    ↓
 [Client]
 ```
-
 
 > Spring Boot에서는 DispatcherServlet이 자동으로 등록되어,
 > 모든 HTTP 요청을 중앙에서 받아 HandlerMapping을 통해 적절한 @Controller 혹은 @RestController 메서드로 라우팅한다.
@@ -120,21 +114,20 @@ public class User {
 요즘의 스프링 부트(Spring Boot) 애플리케이션은
 더 이상 JSP나 Thymeleaf 같은 “화면(View)”을 렌더링하지 않고,
 JSON 데이터를 반환하는 REST API 형태로 동작하는 경우가 많다.
-즉, 전통적인 MVC 구조에서의 ‘View’ 역할이 달라졌다는 뜻이다. 
+즉, 전통적인 MVC 구조에서의 ‘View’ 역할이 달라졌다는 뜻이다.
 
 아래는 스프링에서 역할에 따라 MVC의 차이를 나타낸다.
 
-| 구분                         | 전통적인 Spring MVC            |RESTful Spring Boot (JSON 응답)|
-| --------------------------- | ---------------------------- |---------------------------- |
-| VIEW                        | JSP / Thymeleaf / HTML 템플릿 |JSON 데이터 (Response Body)     |
-| CONTROLLER                  | @Controller                 |@RestController               |
-| 응답방식                      | ViewResolver를 통해 View 이름을 찾음 |@ResponseBody로 JSON 변환   |
-| 사용목적                      | 웹 페이지 렌더링                |API 서버 (React, Vue, 앱 등 클라이언트와 통신)|
-
+| 구분       | 전통적인 Spring MVC                  | RESTful Spring Boot (JSON 응답)                |
+| ---------- | ------------------------------------ | ---------------------------------------------- |
+| VIEW       | JSP / Thymeleaf / HTML 템플릿        | JSON 데이터 (Response Body)                    |
+| CONTROLLER | @Controller                          | @RestController                                |
+| 응답방식   | ViewResolver를 통해 View 이름을 찾음 | @ResponseBody로 JSON 변환                      |
+| 사용목적   | 웹 페이지 렌더링                     | API 서버 (React, Vue, 앱 등 클라이언트와 통신) |
 
 <br/>
 
-**🔹  Spring Boot에서의 MVC 구성 (JSON 중심)**
+**🔹 Spring Boot에서의 MVC 구성 (JSON 중심)**
 
 ```bash
 [Client: React / 모바일앱]
@@ -161,6 +154,7 @@ JSON 데이터를 반환하는 REST API 형태로 동작하는 경우가 많다.
 public interface UserRepository extends JpaRepository<User, Long> {
 }
 ```
+
 ```java
 @Service
 @RequiredArgsConstructor
@@ -172,6 +166,7 @@ public class UserService {
     }
 }
 ```
+
 ```java
 @RestController
 @RequestMapping("/api/users")
@@ -187,7 +182,6 @@ public class UserController {
 }
 ```
 
-
 **결과값(VIEW에 해당)**
 
 ```JSON
@@ -196,7 +190,6 @@ public class UserController {
   { "id": 2, "name": "Anna", "email": "anna@example.com" }
 ]
 ```
-
 
 ## ✅ 결론
 
@@ -210,4 +203,3 @@ public class UserController {
 단지 이제의 View는 HTML이 아닌 JSON이며,
 ViewResolver 대신 HttpMessageConverter가 그 역할을 수행할 뿐이다.
 이 구조 덕분에 Spring Boot는 프론트엔드(React, Vue)나 모바일 앱과 완벽히 분리된 백엔드 서버로 진화하게 되었다.
-
