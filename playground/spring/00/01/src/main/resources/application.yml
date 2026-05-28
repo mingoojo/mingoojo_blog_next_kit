@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: demo
+  datasource:
+    url: jdbc:postgresql://localhost:5432/demo
+    username: postgres
+    password: \uBCF8\uC778_\uBE44\uBC88
+  jpa:
+    hibernate:
+      ddl-auto: update     # \uD559\uC2B5\uC6A9\uC774\uBA74 update, \uC6B4\uC601\uC740 validate/none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
