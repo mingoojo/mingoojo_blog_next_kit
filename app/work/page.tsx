@@ -7,12 +7,11 @@ import { genPageMetadata } from '../seo'
 
 const POSTS_PER_PAGE = 5
 
-export const metadata = genPageMetadata({ title: 'Blog' })
+export const metadata = genPageMetadata({ title: 'Work' })
 
-export default async function BlogPage(props: { searchParams: Promise<{ page: string }> }) {
-  // ↓ Work 글 제외 (category 미지정 글은 Study로 취급)
-  const studyBlogs = allBlogs.filter((p) => p.category !== 'work')
-  const posts = allCoreContent(sortPosts(studyBlogs))
+export default async function WorkPage(props: { searchParams: Promise<{ page: string }> }) {
+  const workBlogs = allBlogs.filter((p) => p.category === 'work')
+  const posts = allCoreContent(sortPosts(workBlogs))
 
   posts.sort((a, b) => {
     const a_date = dayjs(a.date)
@@ -37,7 +36,7 @@ export default async function BlogPage(props: { searchParams: Promise<{ page: st
       posts={posts}
       initialDisplayPosts={initialDisplayPosts}
       pagination={pagination}
-      title="Study"
+      title="Work"
     />
   )
 }

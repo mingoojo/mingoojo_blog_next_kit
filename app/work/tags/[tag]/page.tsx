@@ -6,13 +6,12 @@ import { allBlogs } from 'contentlayer/generated'
 
 import { Metadata } from 'next'
 import dayjs from 'dayjs'
-import { genPageMetadata } from '../../seo'
-import tagData from '../../tag-data.json'
+import { genPageMetadata } from '../../../seo'
 
 const POSTS_PER_PAGE = 5
 
-// study 섹션 글만 (category !== 'work')
-const studyBlogs = () => allBlogs.filter((p) => p.category !== 'work')
+// work 섹션 글만
+const workBlogs = () => allBlogs.filter((p) => p.category === 'work')
 
 export async function generateMetadata(props: {
   params: Promise<{ tag: string }>
@@ -25,18 +24,16 @@ export async function generateMetadata(props: {
     alternates: {
       canonical: './',
       types: {
-        'application/rss+xml': `${siteMetadata.siteUrl}/tags/${tag}/feed.xml`,
+        'application/rss+xml': `${siteMetadata.siteUrl}/work/tags/${tag}/feed.xml`,
       },
     },
   })
 }
 
 export const generateStaticParams = async () => {
-  const tagCounts = tagData as Record<string, number>
-  const tagKeys = Object.keys(tagCounts)
-  return tagKeys.map((tag) => ({
-    tag: encodeURI(tag),
-  }))
+  const workTags = new Set<string>()
+  workBlogs().forEach((p) => p.tags?.forEach((t) => workTags.add(slug(t))))
+  return Array.from(workTags).map((tag) => ({ tag: encodeURI(tag) }))
 }
 
 export default async function TagPage(props: { params: Promise<{ tag: string }> }) {
@@ -45,7 +42,7 @@ export default async function TagPage(props: { params: Promise<{ tag: string }> 
   const title = tag[0].toUpperCase() + tag.split(' ').join('-').slice(1)
   const filteredPosts = allCoreContent(
     sortPosts(
-      studyBlogs().filter((post) => post.tags && post.tags.map((t) => slug(t)).includes(tag)),
+      workBlogs().filter((post) => post.tags && post.tags.map((t) => slug(t)).includes(tag)),
     ),
   )
 

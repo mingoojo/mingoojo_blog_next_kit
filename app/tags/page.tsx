@@ -5,15 +5,22 @@ import { slug } from 'github-slugger'
 import { genPageMetadata } from '../seo'
 import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
 import { allBlogs } from 'contentlayer/generated'
-import tagData from '../tag-data.json'
 
 export const metadata = genPageMetadata({ title: 'Tags', description: 'Things I blog about' })
 
 export default async function Page() {
-  const tagCounts = tagData as Record<string, number>
+  // study 섹션 태그만 집계
+  const studyBlogs = allBlogs.filter((p) => p.category !== 'work')
+  const tagCounts: Record<string, number> = {}
+  studyBlogs.forEach((p) =>
+    p.tags?.forEach((t) => {
+      const s = slug(t)
+      tagCounts[s] = (tagCounts[s] || 0) + 1
+    }),
+  )
   const tagKeys = Object.keys(tagCounts)
   const sortedTags = tagKeys.sort((a, b) => tagCounts[b] - tagCounts[a])
-  const allPosts = allCoreContent(sortPosts(allBlogs))
+  const allPosts = allCoreContent(sortPosts(studyBlogs))
 
   return (
     <>
@@ -27,7 +34,6 @@ export default async function Page() {
           {tagKeys.length === 0 && 'No tags found.'}
           {sortedTags.map((t) => {
             const items = allPosts.filter((data) => data.tags.includes(t))
-
             return (
               <div key={t} className="mt-2 mr-5 mb-2">
                 <Tag text={t} />

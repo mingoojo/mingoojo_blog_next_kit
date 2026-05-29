@@ -3,12 +3,11 @@
 import { usePathname } from 'next/navigation'
 import { slug } from 'github-slugger'
 import { formatDate } from 'pliny/utils/formatDate'
-import { allCoreContent, CoreContent, sortPosts } from 'pliny/utils/contentlayer'
+import { CoreContent } from 'pliny/utils/contentlayer'
 import { allBlogs, type Blog } from 'contentlayer/generated'
 import Link from '@/components/Link'
 import Tag from '@/components/Tag'
 import siteMetadata from '@/data/siteMetadata'
-import tagData from 'app/tag-data.json'
 
 interface PaginationProps {
   totalPages: number
@@ -70,13 +69,25 @@ export default function ListLayoutWithTags({
   pagination,
 }: ListLayoutProps) {
   const pathname = usePathname()
-  const tagCounts = tagData as Record<string, number>
-  const tagKeys = Object.keys(tagCounts)
-  const sortedTags = tagKeys.sort((a, b) => tagCounts[b] - tagCounts[a])
+  const isWork = pathname.startsWith('/work')
+  const tagBase = isWork ? '/work/tags' : '/tags'
+
+  // 현재 섹션(Study/Work)에 맞는 글만 추림
+  const sectionBlogs = allBlogs.filter((p) =>
+    isWork ? p.category === 'work' : p.category !== 'work',
+  )
+
+  // 섹션 기준 태그 카운트 (slug 키)
+  const tagCounts: Record<string, number> = {}
+  sectionBlogs.forEach((post) => {
+    post.tags?.forEach((tag) => {
+      const formatted = slug(tag)
+      tagCounts[formatted] = (tagCounts[formatted] || 0) + 1
+    })
+  })
+  const sortedTags = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a])
 
   const displayPosts = initialDisplayPosts.length > 0 ? initialDisplayPosts : posts
-
-  const allPosts = allCoreContent(sortPosts(allBlogs))
 
   return (
     <>
@@ -87,34 +98,45 @@ export default function ListLayoutWithTags({
           </h1>
         </div>
         <div className="flex sm:space-x-24">
-          <div
-            // style={{ border: '2px solid #ffffff' }}
-            className="hidden border-1 rounded-2xl h-full max-h-screen max-w-[280px] min-w-[280px] flex-wrap overflow-auto bg-gray-50 pt-5 shadow-md sm:flex dark:bg-gray-900/70 dark:shadow-gray-800/40">
-            <div className="px-6 py-4">
-              {pathname.startsWith('/blog') ? (
-                <h3 className="text-primary-500 font-bold uppercase">All Posts</h3>
-              ) : (
+          <div className="hidden border-1 rounded-2xl h-full max-h-screen max-w-[280px] min-w-[280px] flex-wrap overflow-y-auto bg-gray-50 pt-5 shadow-md sm:flex dark:bg-gray-900/70 dark:shadow-gray-800/40 [scrollbar-width:thin] [scrollbar-color:#d1d5db_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400 dark:[&::-webkit-scrollbar-thumb]:bg-gray-600">
+            <div className="w-full px-6 py-4">
+              {/* 섹션 스위처: Study / Work */}
+              <div className="mb-5 flex w-full rounded-full border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-800">
                 <Link
-                  href={'/blog'}
-                  className="hover:text-primary-500 dark:hover:text-primary-500 font-bold text-gray-700 uppercase dark:text-gray-300">
-                  All Posts
+                  href="/work"
+                  aria-current={isWork ? 'page' : undefined}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-center text-sm font-semibold uppercase transition-colors ${
+                    isWork
+                      ? 'bg-primary-500 text-white shadow'
+                      : 'text-gray-500 hover:text-primary-500 dark:text-gray-300'
+                  }`}>
+                  Work
                 </Link>
-              )}
+                <Link
+                  href="/blog"
+                  aria-current={!isWork ? 'page' : undefined}
+                  className={`flex-1 rounded-full px-3 py-1.5 text-center text-sm font-semibold uppercase transition-colors ${
+                    !isWork
+                      ? 'bg-primary-500 text-white shadow'
+                      : 'text-gray-500 hover:text-primary-500 dark:text-gray-300'
+                  }`}>
+                  Study
+                </Link>
+              </div>
               <ul>
                 {sortedTags.map((t) => {
-                  const items = allPosts.filter((data) => data.tags.includes(t))
                   return (
                     <li key={t} className="my-3">
                       {decodeURI(pathname.split('/tags/')[1]) === slug(t) ? (
                         <h3 className="text-primary-500 inline px-3 py-2 text-sm font-bold uppercase">
-                          {`${t} (${items.length})`}
+                          {`${t} (${tagCounts[t]})`}
                         </h3>
                       ) : (
                         <Link
-                          href={`/tags/${slug(t)}`}
+                          href={`${tagBase}/${slug(t)}`}
                           className="hover:text-primary-500 dark:hover:text-primary-500 px-3 py-2 text-sm font-medium text-gray-500 uppercase dark:text-gray-300"
                           aria-label={`View posts tagged ${t}`}>
-                          {`${t} (${items.length})`}
+                          {`${t} (${tagCounts[t]})`}
                         </Link>
                       )}
                     </li>

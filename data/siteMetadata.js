@@ -3,7 +3,7 @@ const siteMetadata = {
   title: "Mingoo Jo's Blog",
   author: 'Mingoo Jo',
   headerTitle: 'MJ Blog',
-  description: 'React, Spring, 그리고 개발 경험을 기록하는 개인 블로그',
+  description: '개발 경험을 기록하는 개인 블로그',
   language: 'ko',
   theme: 'system', // system, dark or light
   siteUrl: 'https://mingoojo-blog-next-kit.vercel.app', // ← 수정

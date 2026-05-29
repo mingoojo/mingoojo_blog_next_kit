@@ -36,36 +36,27 @@ const Header = () => {
           {headerNavLinks
             .filter((link) => link.href !== '/')
             .map((link) => {
+              const firstSegment = `/${pathname.split('/')[1]}`
+              let isActive = firstSegment === link.href
+
+              // Study(/blog)는 글 목록 + 태그 페이지에서 활성
               if (link.href === '/blog') {
-                if (pathname.startsWith('/tags') || pathname.startsWith('/blog')) {
-                  return (
-                    <Link
-                      key={link.title}
-                      href={link.href}
-                      className={'m-1 font-medium text-primary-500 dark:text-primary-400'}>
-                      {link.title}
-                    </Link>
-                  )
-                }
+                isActive = pathname.startsWith('/blog') || pathname.startsWith('/tags')
               }
-              if (link.href === '/projects' || link.href === '/about') {
-                if (`/${pathname.split('/')[1]}` === link.href) {
-                  return (
-                    <Link
-                      key={link.title}
-                      href={link.href}
-                      className={'m-1 font-medium text-primary-500 dark:text-primary-400'}>
-                      {link.title}
-                    </Link>
-                  )
-                }
+              // Work(/work)는 work 경로에서 활성
+              if (link.href === '/work') {
+                isActive = pathname.startsWith('/work')
               }
 
               return (
                 <Link
                   key={link.title}
                   href={link.href}
-                  className="hover:text-primary-500 dark:hover:text-primary-400 m-1 font-medium text-gray-900 dark:text-gray-100">
+                  className={
+                    isActive
+                      ? 'm-1 font-medium text-primary-500 dark:text-primary-400'
+                      : 'hover:text-primary-500 dark:hover:text-primary-400 m-1 font-medium text-gray-900 dark:text-gray-100'
+                  }>
                   {link.title}
                 </Link>
               )
