@@ -1,0 +1,366 @@
+---
+title: '[00-02] build.gradle 의존성 분석 — Spring 백엔드 4대 기둥과 스코프'
+date: '2026-05-29'
+tags: ['spring', 'spring-boot', 'gradle', 'dependencies', 'configuration', 'project-setup']
+draft: false
+summary: 'Spring Initializr가 잡아주는 의존성들을 하나씩 뜯어본다. 4대 기둥(web/jpa/security/validation)의 역할과 implementation/compileOnly/runtimeOnly/annotationProcessor 스코프가 왜 갈리는지 정리한다.'
+authors: ['default']
+---
+
+## 인트로
+
+> 이전 글에서 Gradle이 뭐고 build.gradle이 어떤 역할을 하는지 봤다.
+> 이번 글에서는 그 안의 dependencies {} 블록을 본격적으로 뜯어본다.
+> Spring Initializr에서 체크 몇 번으로 받아온 의존성들이 각각 무슨 역할인지, 그리고 왜 어떤 건 implementation이고 어떤 건 runtimeOnly인지 — 이걸 모르면 의존성 추가할 때마다 복붙하게 된다.
+
+[파일 깃헙 주소](https://github.com/mingoojo/mingoojo_blog_next_kit/tree/main/playground/spring/00/02)
+
+### 1. 현재 잡혀있는 의존성 한눈에 보기
+
+```gradle
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+```
+
+**핵심: **
+
+1. `spring-boot-starter-*` 는 "묶음" — 안에 여러 라이브러리가 같이 따라옴
+2. 앞에 붙은 `implementation`, `compileOnly`, `runtimeOnly`는 "스코프" — 언제 클래스패스에 올릴지를 정의
+
+### 2. 스코프(Configuration) — 왜 구분하는가
+
+<br/>
+#### 2-1. 그 전에 — 자바 코드가 실행되기까지의 4단계
+
+스코프를 이해하려면 먼저 "내 코드가 실행되는 흐름" 을 단계로 쪼개봐야 한다.
+
+```bash
+[1] 컴파일        [2] 패키징         [3] 런타임          [4] 테스트
+.java → .class → 모든 .class + 라이브러리 → JVM이 jar 로드 → 별도로
+                  를 jar 한 덩어리로 묶음    실행                JUnit 돌림
+```
+
+각 단계마다 "이 라이브러리가 지금 필요한가?" 가 달라진다. **Gradle 스코프는 정확히 그걸 표현하는 도구다.**
+
+<br/>
+#### 2-2. 컴파일 시점(Compile time) — javac가 일하는 순간
+
+무엇을 하는가: src/main/java/의 `.java` 파일을 javac이 `.class`로 번역한다.
+
+이때 클래스패스에 있어야 하는 것: 내 코드가 소스에서 직접 언급하는 모든 클래스.
+
+**예시**
+
+내 코드에 이 한 줄이 있다고 하자.
+
+```java
+import lombok.Getter;
+
+@Getter
+public class Member {
+    private String name;
+}
+```
+
+`javac`가 이 파일을 컴파일하려면 반드시 `lombok.Getter` 클래스가 클래스패스에 있어야 한다. 없으면 cannot find symbol: Getter 에러가 난다. 그래서 컴파일 클래스패스에는 `Lombok`이 있어야 한다.
+
+<Callout type="tip" label="핵심:">
+  컴파일 시점에 필요한 건 "내가 import하거나 타입으로 쓰는 것"이다.
+</Callout>
+<br/>
+#### 2-3. 런타임 시점(Runtime) — JVM이 일하는 순간
+
+무엇을 하는가: `java -jar demo.jar` — JVM이 `.class`를 메모리에 로드하고 실제로 실행하는 단계다.
+
+이때 클래스패스에 있어야 하는 것: 실행 중 실제로 호출되는 모든 클래스. (컴파일 시점에 import한 것 + 그것들이 내부적으로 또 호출하는 것 + 동적으로 로드되는 것)
+
+**예시 ①:**
+
+`Lombok`은 런타임에 필요한가? ❌ 필요 없다
+
+위의 `Member` 클래스, 컴파일 후 `.class` 파일을 디컴파일해보면 이렇게 변해있다.
+
+```java
+// .class에 실제로 들어있는 모습 (Lombok이 코드를 만들어 박아둠)
+public class Member {
+    private String name;
+
+    public String getName() {        // ← Lombok이 컴파일 시점에 생성
+        return this.name;
+    }
+}
+```
+
+- 런타임에는 Getter 어노테이션 자체가 사라지고, 평범한 `getName()` 메서드만 남는다. 그래서 `JVM`은 `Lombok` 라이브러리가 클래스패스에 없어도 멀쩡히 동작한다. 런타임 클래스패스에서는 빼도 OK.
+
+- 그래서 `Lombok`이 `compileOnly` 인 것이다. "컴파일러야, 너만 보고 가. 나는 `jar`에 안 들어갈 거야."
+
+**예시 ②:**
+
+PostgreSQL 드라이버는 컴파일에 필요한가? ❌ 필요 없다
+
+내 코드 어디에도 이런 게 없다.
+
+```java
+import org.postgresql.Driver;  // ← 이런 import 안 함
+```
+
+대신 `application.yml`에 이렇게 적혀있다.
+
+```yml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/demo
+```
+
+실행 중에 Spring(HikariCP)이 이 URL의 `postgresql` 부분을 보고 런타임에 클래스로더로 `org.postgresql.Driver` 클래스를 찾아 로드한다. 이걸 동적 클래스 로딩이라고 부른다.
+
+- 컴파일 시점에는 `PostgreSQL` 드라이버가 없어도 컴파일은 성공한다. 하지만 실행하는 순간 없으면 `No suitable driver found for jdbc:postgresql://...` 에러로 폭발한다.
+
+- 그래서 `PG` 드라이버가 `runtimeOnly` 인 것이다. "컴파일러야, 너는 몰라도 돼. `JVM`아, 너는 꼭 찾을 수 있게 jar에 넣어둘게."
+
+**예시 ③: **
+
+Spring Web은? 둘 다 필요하다
+
+```java
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class HelloController { ... }
+```
+
+- 컴파일 시: RestController 클래스 정의를 찾아야 함 → 필요
+- 런타임 시: @RestController 어노테이션을 Spring이 스캔해서 빈으로 등록해야 함 → 필요
+
+**그래서 Spring Web 같은 일반 라이브러리는 implementation (= 컴파일 + 런타임 둘 다) 인 것이다.**
+
+<Callout type="tip" label="핵심 정리:"><br />
+  **컴파일에만 필요** = 내가 import하지만, 컴파일 결과(.class)에는 흔적도 안 남는 것 → `compileOnly` (Lombok) <br />
+  **런타임에만 필요** = 내가 import는 안 하지만, 실행 중 동적으로 로드되는 것 → `runtimeOnly` (JDBC 드라이버) <br />
+  **둘 다 필요** = 일반적인 라이브러리 → `implementation` (대부분)
+</Callout>
+
+<br/>
+#### 2-4. 산출물(Artifact, jar) — "최종 결과물 안에 뭐가 들어가나"
+무엇인가: `./gradlew build`를 돌리면 `build/libs/demo-0.0.1-SNAPSHOT.jar` 파일이 만들어진다. 이게 배포되고 실행되는 최종 결과물이다.
+
+Spring Boot의 jar는 "fat jar (uber jar)" 라고 부르는데, 내 코드 + 모든 `implementation/runtimeOnly` 의존성이 한 파일에 다 들어있다.
+
+**직접 열어보기**
+
+빌드 후 이렇게 확인할 수 있다.
+
+```bash
+./gradlew build
+jar tf build/libs/demo-0.0.1-SNAPSHOT.jar | grep -E "(lombok|postgresql|junit)"
+```
+
+**결과:**
+
+```bash
+BOOT-INF/lib/postgresql-42.x.x.jar   ← 들어있음 (runtimeOnly)
+                                      ← lombok 없음 (compileOnly)
+                                      ← junit 없음 (testImplementation)
+```
+
+- 의도한 대로 Lombok과 JUnit은 jar에 빠지고, PostgreSQL 드라이버는 들어있다.
+
+**산출물에서 compileOnly, testImplementation 등이 왜 빠지는 게 왜 좋은가?**
+
+| 이유          | 설명                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------- |
+| jar 크기 ↓    | Lombok 약 2MB, JUnit + Mockito + AssertJ 합치면 10MB+. 운영에 불필요한 게 안 들어간다 |
+| 시작 시간 ↓   | JVM이 로드해야 할 클래스가 줄어든다                                                   |
+| 보안 표면 ↓   | 운영 jar에 테스트 도구가 있으면 그 자체로 공격 표면이다 (특히 H2 Console 같은 것)     |
+| 의존성 충돌 ↓ | 라이브러리 버전 충돌 가능성이 감소한다                                                |
+
+<br/>
+
+#### 2-5. 테스트 시점(Test time) — 별도 우주
+
+무엇을 하는가: `./gradlew test — src/test/java/`의 코드를 별도로 컴파일하고 별도로 실행한다.
+
+**핵심: **
+테스트는 운영 코드와 분리된 자기만의 클래스패스를 가진다. 그래서 `JUnit`, `Mockito` 같은 건 운영 `jar`에는 안 들어가지만 테스트 실행 시에는 필요하다.
+
+```bash
+운영 jar에 들어가는 것:           테스트 실행 시에만 쓰는 것:
+- 내 main 코드                   - 내 test 코드
+- implementation 의존성           - testImplementation 의존성
+- runtimeOnly 의존성              - testRuntimeOnly 의존성
+                                  - (+ 위의 운영 의존성도 다 포함)
+```
+
+**예시: **
+
+JUnit은 왜 testImplementation?
+
+```java
+// src/test/java/com/example/demo/MemberTest.java
+import org.junit.jupiter.api.Test;  // ← JUnit
+
+class MemberTest {
+    @Test
+    void name이_정상_저장된다() { ... }
+}
+```
+
+- 운영 코드(`src/main/java/`)에서는 `JUnit`을 절대 `import`하지 않는다 → 운영 컴파일/런타임 클래스패스에 들어갈 필요가 없다
+- 테스트 코드에서만 `import` → 테스트 컴파일 + 테스트 런타임 클래스패스에만 있으면 된다
+
+**그래서 testImplementation (테스트 전용 implementation).**
+
+**testRuntimeOnly (junit-platform-launcher)는?**
+
+`junit-platform-launcher`는 테스트를 실제로 실행시켜주는 엔진이다. 내 테스트 코드는 이걸 직접 `import`하지 않고 `Gradle`이 알아서 호출한다. 그래서 테스트 컴파일 시에는 필요 없고, 테스트 실행 시점에만 필요하다 → `testRuntimeOnly.`
+
+<br/>
+
+#### 2-6. 정리
+
+| Scope               | 컴파일                              | 런타임 | 테스트       | jar에 포함 | 대표 예시                                      |
+| ------------------- | ----------------------------------- | ------ | ------------ | ---------- | ---------------------------------------------- |
+| implementation      | ✅                                  | ✅     | ✅           | ✅         | Spring Web, JPA — 평범한 라이브러리            |
+| compileOnly         | ✅                                  | ❌     | ❌           | ❌         | Lombok — 컴파일러만 알면 끝나는 것             |
+| annotationProcessor | 컴파일 시 코드 생성 전용 클래스패스 | ❌     | ❌           | ❌         | Lombok, MapStruct — 컴파일러 플러그인          |
+| runtimeOnly         | ❌                                  | ✅     | ✅           | ✅         | JDBC 드라이버, Logback impl — 동적 로드되는 것 |
+| testImplementation  | ❌                                  | ❌     | ✅           | ❌         | JUnit, Mockito — 테스트에서만 import           |
+| testRuntimeOnly     | ❌                                  | ❌     | ✅ (실행 시) | ❌         | junit-platform-launcher — 테스트 실행 엔진     |
+
+<br/>
+ 
+#### 2-7. 왜 굳이 구분하여 의존성에 정의하나
+
+1. 산출물 jar의 크기와 보안 표면 최소화
+   - `Lombok`, `JUnit`, `Mockito` 등이 운영 `jar`에 안 들어간다.
+
+2. 의도 표현 (코드 리뷰 첫 줄)
+   - `runtimeOnly` `org.postgresql:postgresql` 한 줄이 "우리 코드는 PG에 직접 결합돼 있지 않다, 드라이버만 갈아끼우면 DB 바꿀 수 있다" 라는 의도를 표현한다.
+
+3. 의존성 누수 방지 (Gradle만의 강점)
+   - `implementation`으로 받은 의존성은 이 모듈을 의존하는 다른 모듈에서는 보이지 않는다. 멀티 모듈 프로젝트에서 중요하다. (반대로 외부에 공개해야 할 의존성은 api 스코프를 쓰지만, 단일 모듈에선 거의 쓸 일이 없다)
+
+4. 컴파일 속도 향상
+   - 컴파일러가 봐야 할 클래스가 적을수록 빠르다.
+
+### 3. 의존성 4대 기둥 — Spring 백엔드 스타터
+
+#### 1. spring-boot-starter-web
+
+HTTP를 다루는 모든 것.
+
+- Spring MVC — `@RestController`, `@RequestMapping` 등
+- 내장 `Tomcat` — 별도 WAS 설치 없이 `java -jar` 한 줄로 실행
+- `Jackson` — `JSON` ↔ `Java` 객체 자동 변환
+
+<br/>
+
+#### 2. spring-boot-starter-data-jpa
+
+DB 영속성 계층 전체.
+
+- `Spring Data JPA` — `JpaRepository`, 메서드명 쿼리(`findByEmail...`)
+- `Hibernate` — JPA 구현체
+- `HikariCP` — 커넥션 풀
+- `Spring TX` — `@Transactional`
+
+<br/>
+
+#### 3. spring-boot-starter-security
+
+인증/인가 프레임워크.
+
+- 필터 체인, `BCrypt` 패스워드 인코더, `CSRF/CORS`, 세션 관리
+
+<Callout type="warning" label="주의:">
+이걸 추가하는 순간 모든 엔드포인트가 즉시 401로 막힙니다. `SecurityFilterChain` 빈을 직접 정의해서 열어줘야 함. (다음 시리즈에서 다룰 예정)
+</Callout>
+
+<br/>
+
+#### 4. spring-boot-starter-validation
+
+입력값 검증.
+
+- `Hibernate Validator` — `@NotNull`, `@Size`, `@Email`, `@Pattern` 등
+- `@Valid`가 작동하게 해줌
+
+<br/>
+
+### 4. 그 외 의존성 — 왜 스코프가 다른가
+
+**Lombok** — `compileOnly` + `annotationProcessor` 콤보
+
+```gradle
+compileOnly 'org.projectlombok:lombok'
+annotationProcessor 'org.projectlombok:lombok'
+```
+
+이 두 줄 한 세트가 Lombok의 정석.
+
+| 줄                  | 역할                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| annotationProcessor | 컴파일러가 @Getter @Builder 같은 어노테이션을 보고 실제 메서드 코드를 생성. 코드 생성 플러그인 역할                                       |
+| compileOnly         | 우리 소스가 import lombok.Getter; 하므로 컴파일 클래스패스에는 있어야 함. 단, 런타임에는 이미 코드가 생성된 상태라 jar에 포함될 필요 없음 |
+
+### 5. 테스트 의존성
+
+`spring-boot-starter-test` (testImplementation)
+
+이 한 줄에 사실상 모든 테스트 도구가 다 들어있음.
+
+| 들어있는 것          | 용도                                               |
+| -------------------- | -------------------------------------------------- |
+| JUnit 5 (Jupiter)    | 테스트 프레임워크                                  |
+| Mockito              | 모킹                                               |
+| AssertJ              | assertThat(x).isEqualTo(...) 같은 가독성 좋은 단언 |
+| JsonPath, JSONassert | JSON 응답 검증                                     |
+| Spring Test          | @SpringBootTest, MockMvc, @MockBean                |
+
+`spring-security-test` — 보안 적용된 컨트롤러 테스트용
+
+```gradle
+testImplementation 'org.springframework.security:spring-security-test'
+```
+
+### 6. "실무 풀스택"으로 충분한가?
+
+> 결론: 학습용으로는 충분하지만, 실무 한 프로젝트엔 5~6개 정도 빠져 있다.
+
+**실무 거의 필수 (★★★)**
+
+| 의존성                                   | 역할                                                         |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| spring-boot-starter-actuator             | /health, /metrics, K8s liveness/readiness                    |
+| flyway-core + flyway-database-postgresql | DB 스키마 마이그레이션. ddl-auto: update는 학습용, 실무 금지 |
+| springdoc-openapi-starter-webmvc-ui      | Swagger UI 자동 생성                                         |
+| io.jsonwebtoken:jjwt-\*                  | JWT 발급/검증 (Spring Security 자체엔 없음)                  |
+
+**있으면 좋은 것 (★★)**
+| 의존성 | 역할 |
+|--------------------|----------------------------------|
+| Testcontainers | 통합 테스트 시 진짜 Postgres를 Docker로 띄움 |
+| Querydsl | 타입 안전한 동적 쿼리 |
+| MapStruct | DTO ↔ Entity 매핑 자동 생성 |
+| starter-data-redis | 캐시, 세션, Rate limiter |
+
+### 7. 정리 — 한 줄 요약
+
+> 4대 기둥(web/jpa/security/validation) + 테스트 풀세트 — 이 구조가 Spring 백엔드의 가장 기본적인 출발선.
+> 스코프(implementation vs compileOnly vs runtimeOnly)는 "이 라이브러리가 언제 필요한지" 를 정확히 표현하는 도구. 모르면 다 implementation으로 박아도 돌긴 하지만, 실무에서는 이 구분이 코드 리뷰의 첫 줄.
