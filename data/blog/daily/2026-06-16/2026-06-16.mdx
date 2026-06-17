@@ -1,0 +1,370 @@
+---
+title: '2026-06-16 : @EventListener 동기 처리로 밀리던 실시간 GNSS 추정 잡기'
+date: '2026-06-16'
+tags: ['daily', 'spring', 'concurrency', 'realtime']
+draft: false
+summary: 'Spring @EventListener가 동기로 실행된다는 사실을 몰라, 무거운 칼만 추정이 폴링 스케줄러 스레드를 점유하며 에폭의 14.91%가 누락되던 문제. 단일 스레드 워커 + busy guard로 0%까지 잡은 과정과, 그 과정에서 만난 "조용히 멈추는" 숨은 함정까지.'
+authors: ['default']
+category: work
+---
+
+## @EventListener는 동기다 — 실시간 GNSS 추정에서 사라지던 14.91% 잡기
+
+Spring Boot 멀티모듈 환경. 5초 간격 GNSS 관측치(QM)를 받아 대류권/전리층 보정을 실시간으로 추정하는 모듈이다.
+
+함수 하나하나는 3초도 안 걸리는데, 결과는 5초마다 안 나오고 10초·15초씩 밀렸다. 범인은 코드가 아니라 **`@EventListener`의 실행 모델**이었다.
+
+<br />
+
+### 1. 시스템 구조 — 폴링 스케줄러가 이벤트를 깨운다
+
+| 컴포넌트                      | 역할                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| `RealTimeQmTrackingScheduled` | **0.5초마다 폴링**. Redis의 새 QM을 읽어 전역 리스트에 적재   |
+| `GlobalState.realtimeQmList`  | 시각(에폭)별 QM 누적 버퍼. **최근 3시각만** 유지(롤링 윈도우) |
+| `GlobalEventState`            | `qmUpdateTime`이 **바뀔 때만** 이벤트를 발행하는 게이트       |
+| `EventRunner`                 | 이벤트를 받아 칼만 추정 수행                                  |
+
+흐름은 이렇다.
+
+```text
+@Scheduled(fixedDelay = 500) ─ RealTimeQmTrackingScheduled
+  ① realtimeQmCreate()      Redis ──▶ GlobalState.realtimeQmList (시각별 적재)
+  ② realtimeQmManagement()  롤링 윈도우 유지 + 최신 시각 계산
+            │
+            ▼  globalEventState.setQmUpdateTime(mostRecentTime)
+  ┌──────────────────────────────────────────────┐
+  │ GlobalEventState                             │
+  │   qmUpdateTime != newValue 일 때만 ↓           │  ← "값이 바뀌었을 때만" 게이트
+  │   publisher.publishEvent(QmTimeUpdateEvent)  │
+  └──────────────────────────────────────────────┘
+            │  (동기 호출 — 같은 스레드!)
+            ▼
+      EventRunner.QmDataUpdateListener  ──▶ 칼만 추정
+            │
+            ▼  setEstimationSaveResult → EstimationResultEvent
+      EventRunner.EstimationResultUpdateListener ──▶ Trop/Stec 보정 생성
+```
+
+#### 왜 폴링과 이벤트를 섞었나
+
+- 스케줄러는 Redis를 **0.5초마다** 들여다본다. 하지만 추정은 매 0.5초가 아니라 **새 에폭 시각이 들어왔을 때**(실서비스에선 5초마다)만 돌면 된다. 그래서 "데이터 적재(폴링)"와 "추정 트리거(이벤트)"를 분리했다.
+- 그 경계가 `GlobalEventState.setQmUpdateTime`이다.
+
+```java
+public void setQmUpdateTime(double newValue) {
+    if (this.qmUpdateTime != newValue) {        // ★ 시각이 바뀌었을 때만
+        double oldValue = this.qmUpdateTime;
+        this.qmUpdateTime = newValue;
+        publisher.publishEvent(new QmTimeUpdateEvent(oldValue, newValue));  // 추정 깨우기
+    }
+}
+```
+
+폴링은 0.5초마다 빈손으로 돌다가, **최신 시각이 갱신되는 순간에만** 이벤트를 쏴서 추정을 깨운다. 이벤트 기반이라 추정 로직은 "언제 도는지"를 신경 쓸 필요가 없다. 깔끔한 설계처럼 보였다.
+
+<Callout type="warning" label="함정:">
+  하지만 이 구조에는 함정이 숨어 있었다. `publishEvent`가 **같은 스레드에서 동기로 실행**된다는 점이다.
+</Callout>
+
+<br />
+
+### 2. 문제 발견 — 데이터가 밀린다
+
+증상은 단순했다. 5초마다 나와야 할 추정 결과가 **5초 / 10초 / 15초**로 들쭉날쭉했다. 추정 함수 각각은 3초 미만으로 평이한데도.
+
+원인은 1장 구조에 있었다. **한 스레드가 모든 걸 한다.**
+
+```text
+@Scheduled(fixedDelay = 500) 폴링 스레드
+  ├─ realtimeQmCreate()      ← Redis에서 새 QM 읽어 적재 담당
+  └─ realtimeQmManagement()  ← 롤링 윈도우 유지 및 QM 관리 + 이벤트 발행
+          └─ setQmUpdateTime → publishEvent → EventRunner(추정)  ← 같은 스레드에서 동기 실행!
+```
+
+- `publishEvent`는 비동기가 아니다. **퍼블리셔 스레드에서 그대로 동기 실행**된다. 즉 추정(`callRealtimeQmEst`, ~5초)이 도는 동안 **`@Scheduled` 폴링 스레드 자체가 묶인다.**
+- 여기에 `fixedDelay = 500`도 문제다. `fixedDelay`는 **이전 실행이 끝난 뒤** 500ms를 세고 다음 실행을 시작한다. 추정이 5초 걸리면 다음 폴링은 `5초 + 0.5초` 뒤로 밀린다.
+
+폴링이 밀리는 동안:
+
+1. 추정 ~5초간 `realtimeQmCreate`가 **안 돈다** → Redis에 새 QM이 쌓여도 **읽지 못한다**
+2. `realtimeQmList`(롤링 윈도우, 최근 3시각)에 새 시각이 안 들어온다
+3. 더 새로운 QM이 도착하면 다음 폴링이 한꺼번에 따라잡으며 **중간 시각이 윈도우 밖으로 밀려난다**
+4. 윈도우 밖으로 밀려난 에폭은 다시 못 본다 → **누락(eviction)**
+
+<Callout type="tip" label="핵심:">
+  함수가 느린 게 문제가 아니다. **느린 추정이 자기를 깨운 폴링 스레드를 점유 → 데이터 읽기가 멈춤 → 윈도우 밖 에폭 누락.** "느린 함수"와 "데이터 읽기"가 같은 스레드에 있다는 구조가 진짜 범인이다.
+</Callout>
+
+```text
+[동기 — 한 스레드]
+스케줄러 > Publisher로 값을 갱신 > [갱신 감지 시 메인 로직 실행] - 0.5초 후 - ... 반복
+                                  └─ 메인 로직이 도는동안 QM을 못읽음 > 에폭 밀려나 누락
+```
+
+<br />
+
+### 3. 파이썬으로 누락률을 측정
+
+"밀리는 것 같다"는 느낌으로는 고칠 수 없다. **숫자로 못 박아야** 고친 뒤에 비교가 된다.
+
+추정 트리거 지점에 이미 로그가 있었다.
+
+```java
+@EventListener
+public void QmDataUpdateListener(QmTimeUpdateEvent event) {
+    log.info("QM값 변경됨 - gs: {} → {}", event.getOldValue(), event.getNewValue());
+    // ...
+}
+```
+
+이 로그는 **이벤트가 발행될 때마다**(= 새 시각이 처리될 때마다) 찍힌다. 정상이라면 연속한 두 로그의 간격은 항상 5초다. 그래서 로그의 시간 간격만 세면 누락률이 나온다.
+
+```python
+import re
+from datetime import datetime
+
+ts_re = re.compile(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+).*QM값 변경됨')
+
+times = []
+with open('app.log(파일명)', encoding='utf-8') as f:
+    for line in f:
+        m = ts_re.search(line)
+        if m:
+            times.append(datetime.fromisoformat(m.group(1)).timestamp())
+
+abnormal = 0
+for prev, cur in zip(times, times[1:]):
+    if round(cur - prev) != 5:        # 5초가 아니면 밀린 것
+        abnormal += 1
+
+total = len(times) - 1
+print(f"전체 QM 변경: {total}건")
+print(f"비정상(차이≠5): {abnormal}건")
+print(f"비정상 비율: {abnormal / total * 100:.2f}%")
+```
+
+개선 전 결과:
+
+```text
+비정상 비율: 14.91%
+```
+
+<Callout type="error" label="에러:">
+  약 15%의 에폭이 5초 간격을 못 지켰다. GNSS 보정에서 에폭 누락은 곧 **보정 공백**이다. 즉 14.91%의 정보를 누락시키는 장애구조였다.
+</Callout>
+
+<br />
+
+### 4. 해결 — 추정을 워커 스레드로 떼어낸다
+
+과정은 두가지이다.
+
+1. 추정(**시간을 많이 잡아먹는 메인 알고리즘**)을 폴링 스레드에서 분리하고,
+2. 밀린 일을 쌓지 않는다.
+
+한 스레드가 다 하던 구조를, 폴링과 추정을 갈라 둔 구조로 바꾼다.
+
+<CodeCompare>
+  <CodePanel type="bad" title="개선 전 — 동기 (한 스레드)">
+    ```text
+    스케줄러 스레드
+      ├ create  (QM 적재)
+      ├ mgmt    (윈도우 + 이벤트)
+      └ publishEvent
+            └ 추정 5s ──┐ 같은 스레드 점유
+      추정 끝나야 다음 폴링
+      (5s + 0.5s 밀림)
+      → 그동안 QM 못 읽음
+      → 에폭 윈도우 밖으로 누락
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="good" title="개선 후 — 비동기 (분리)">
+    ```text
+    스케줄러 스레드
+      ├ create  (QM 적재)
+      ├ mgmt
+      └ submit ─→ 즉시 반환
+      0.5s마다 계속 폴링 (안 밀림)
+
+    워커 스레드
+      └ 추정 5s (병렬 실행)
+      → 폴링 안 멈춤
+      → 누락 0%
+    ```
+
+  </CodePanel>
+</CodeCompare>
+
+```java
+// ★ 추정 전용 단일 스레드 (칼만 상태 직렬 보장)
+private final ExecutorService estimationExecutor = Executors.newSingleThreadExecutor();
+private final AtomicBoolean busy = new AtomicBoolean(false);
+
+@EventListener
+public void QmDataUpdateListener(QmTimeUpdateEvent event) {
+
+    // ② busy guard: 이미 처리 중이면 이번 이벤트는 버린다 = 백로그 안 쌓음
+    if (!busy.compareAndSet(false, true)) {
+        log.warn("이전 estimation 처리 중 → 이벤트 스킵 (newGs={})", event.getNewValue());
+        return;
+    }
+
+    // ③ 데이터 스냅샷은 "폴링 스레드"에서 — realtimeQmList 동시접근 회피
+    double target = realtimeQmService.pickLatestProcessableTime();
+    if (target < 0) { busy.set(false); return; }   // ④ 처리할 시각 없으면 복구 후 종료
+
+    EpochData qms;
+    try {
+        qms = realtimeQmService.generateArrQm(target);
+    } catch (Exception e) {
+        log.error("generateArrQm 실패 (target={})", target, e);
+        busy.set(false);                            // 실패해도 복구
+        return;
+    }
+
+    // ① 무거운 추정만 워커 스레드로 → 폴링 스레드는 즉시 반환
+    estimationExecutor.submit(() -> {
+        try {
+            atmosphereService.callRealtimeQmEst(qms);
+        } catch (Exception e) {
+            log.error("estimation 실패", e);
+        } finally {
+            busy.set(false);
+        }
+    });
+}
+```
+
+네 가지 결정에 각각 이유가 있다.
+
+#### 1. 추정을 워커 스레드로 분리
+
+##### 워커 스레드란?
+
+"워커 스레드(worker thread)"는 **무거운 일을 대신 처리하라고 따로 만들어 둔 별도의 실행 흐름**이다. 메인 흐름(여기선 스케줄러 스레드)은 일을 직접 하지 않고 워커에게 **던지기만** 하고 자기 일로 즉시 돌아간다.
+
+핵심은 `ExecutorService`와 `submit`이다.
+
+```java
+// 추정 전용 스레드 1개를 미리 만들어 둔다
+private final ExecutorService estimationExecutor = Executors.newSingleThreadExecutor();
+
+// "이 일 좀 해줘" 하고 맡기면, 맡기자마자 다음 줄로 넘어간다 (안 기다림)
+estimationExecutor.submit(() -> {
+    atmosphereService.callRealtimeQmEst(qms);   // ← 이 추정은 estimationExecutor의 스레드에서 실행됨
+});
+```
+
+- `newSingleThreadExecutor()`는 **별도 스레드 1개를 가진 작은 일꾼**을 만든다.
+- `submit(...)`은 "이 작업을 그 일꾼에게 맡겨라"이고, **맡기는 즉시 반환**한다. 추정이 끝날 때까지 기다리지 않는다.
+- 실제 `callRealtimeQmEst`(추정 5초)는 **스케줄러 스레드가 아니라 워커 스레드**에서 돈다.
+
+##### 두 스레드가 동시에 다른 일을 한다
+
+```text
+스케줄러 스레드  ─create─mgmt─submit(맡기고 즉시 반환)─끝──0.5s──create─…
+                              │ "이거 해줘" 하고 다음 작업 진행
+                              ▼
+워커 스레드       ────────────[████ callRealtimeQmEst 추정 5s ████]
+                              └ 이 5초 동안 스케줄러는 자기 일을 계속한다 (병렬)
+```
+
+- **개선 전** — callRealtimeQmEst이라는 추정 알고리즘이 다 돌고 결과를 레디스에 저장하기 전까지 다음 스케줄러를 호출하지 않음
+- **개선 후** — 스케줄러는 계속 0.5초마다 돌면서 QM폴링을 진행하고, 그와 별개로 callRealtimeQmEst 알고리즘이 돌면서 값을 레디스에 저장
+
+그래서 `estimationExecutor.submit()`으로 추정을 떼어내면, `@EventListener`는 데이터 스냅샷만 뜨고 **즉시 반환**한다. 폴링 스레드는 다시 `realtimeQmCreate`로 돌아가 새 QM을 계속 읽는다. **데이터 적재가 더는 안 멈춘다.**
+
+#### 왜 풀(pool)이 아니라 단일 스레드인가
+
+칼만 상태는 에폭 간에 누적된다. 이전 에폭의 공분산·상태벡터가 다음 에폭 입력이 된다. 추정이 병렬로 돌면 상태가 깨진다. `newSingleThreadExecutor()`가 **추정의 직렬 실행을 보장**한다. 폴링과는 분리하되, 추정끼리는 순서를 지킨다.
+
+#### 2. busy guard (AtomicBoolean)
+
+실시간 시스템의 핵심 결정이다. 워커로 분리해도 추정이 5초 걸리는데 이벤트가 5초마다 오면 submit이 큐에 쌓여 또 백로그(처리 대기중인 일)가 된다. 그래서 **처리 중이면 그냥 버린다.**
+
+<Callout type="tip" label="핵심:">
+  실시간 보정에서 데이터를 뒤늦게 처리하는 건 백로그에 데이터를 계속 쌓아가는 것 밖에 안된다. **전부 처리가 아니라 최신만 처리** 가 실시간의 정답이기에 과감하게 데이터를 스킵하고 최신데이터를 처리해야한다.
+  만약 데이터 처리가 5초를 초과해서 지속적으로 백로그 누적이 발생하면 데이터 처리 간격을 5초에서 더 늘려야한다.
+</Callout>
+
+#### 3. 스냅샷은 폴링 스레드에서
+
+`realtimeQmList`를 워커에서 읽으면 폴링 스레드(쓰기)와 동시접근이 생긴다. 스냅샷(`generateArrQm`)은 폴링 스레드에서 떠서 워커엔 **불변 데이터만** 넘긴다.
+
+```text
+[비동기 — 폴링과 추정 분리]
+폴링 ─[적재][윈도우][submit]─[적재][윈도우][busy:스킵]─[적재][윈도우][submit]─ … (폴링 안 밀림)
+워커 ─────────────[     추정     ]──────────────[    추정     ]
+```
+
+<br />
+
+### 5. 숨은 함정 — busy를 안 풀면 모듈이 통째로 멈춘다
+
+여기서 한 번 크게 데일 뻔했다. `busy` 플래그는 워커가 끝날 때 `finally`에서 풀린다. 그런데 **워커에 도달하기 전에 빠져나가는 경로**가 둘 있다.
+
+- `target < 0` (처리할 시각 없음)
+- `generateArrQm` 예외
+
+이 경로에서 `busy`를 안 풀고 `return`하면 어떻게 될까? `busy`는 영원히 `true`로 남는다. 그러면 이후 **모든 이벤트가 `compareAndSet`에서 막혀** 스킵된다. 추정이 영영 안 돈다. **모듈 전체가 예외 로그 한 줄 없이 조용히 멈춘다.**
+
+```java
+if (target < 0) { busy.set(false); return; }          // ★ 복구
+try {
+    qms = realtimeQmService.generateArrQm(target);
+} catch (Exception e) {
+    busy.set(false);                                   // ★ 복구
+    return;
+}
+// 워커 진입 후엔 finally에서 복구
+```
+
+<Callout type="error" label="치명적:">
+  워커 분리는 누구나 떠올린다. 하지만 **가드 실패 시 락 복구를 빠뜨리면, 원래의 누락보다 훨씬 큰 전면 정지 장애**가 된다. 비동기 플래그를 쓸 땐 항상 "이 플래그를 못 푸는 경로가 있는가?"를 먼저 따져야 한다.
+</Callout>
+
+<br />
+
+### 6. 검증 — 14.91% → 0%
+
+같은 측정 스크립트를 개선 후 로그에 다시 돌렸다.
+
+```text
+전체 QM 변경: 689건
+비정상(차이≠5): 0건
+비정상 비율: 0.00%
+```
+
+689건 전부 간격 5초. 누락이 완전히 사라졌다.
+테스트 시간은 줄었지만 결과는 괄목할만하다.
+
+| 항목        | 개선 전            | 개선 후            |
+| ----------- | ------------------ | ------------------ |
+| 처리 간격   | 5 / 10 / 15초 혼재 | **5초 균일**       |
+| 비정상 비율 | **14.91%**         | **0.00%**          |
+| 폴링 스레드 | 추정에 점유됨      | 즉시 반환          |
+| 추정 직렬성 | —                  | 단일 스레드로 보장 |
+
+<br />
+
+### 7. 회고
+
+#### 얻은 것
+
+- 폴링(데이터 적재)과 추정(무거운 연산)을 **스레드 단위로 분리**해 누락을 0%로
+- busy guard로 백로그 자체를 안 만들어 **항상 최신 에폭만** 처리
+- 단일 스레드 워커로 칼만 상태의 **직렬성 보장**
+
+#### 삽질 포인트
+
+- **`@EventListener`는 동기다.** `@Async` 없이 리스너에서 무거운 작업을 직접 돌리면 퍼블리셔 스레드(여기선 `@Scheduled` 폴링 스레드)를 점유한다.
+- **`fixedDelay`는 이전 실행 종료 후 카운트**한다. 리스너가 느리면 폴링 주기 자체가 늘어난다.
+- **비동기 플래그는 모든 탈출 경로에서 복구하라.** early return·예외에서 빠뜨리면 누락보다 더 조용하고 치명적인 전면 정지를 만난다.
+- "전부 처리"가 항상 옳은 게 아니다. **실시간에선 최신만 처리하고 나머지를 버리는 게** 지연을 없애는 길이다.
+
+#### 마치며
+
+겉보기엔 멀쩡한데 데이터가 조용히 밀리던 문제였다. 측정 가능한 지표(14.91% → 0%)로 시작하고 끝낸 게, 원인을 코드가 아닌 **실행 모델**에서 찾게 해준 결정적 단서였다. 동시성 버그는 "어느 코드가 틀렸나"가 아니라 "어느 스레드가 무엇을 붙잡고 있나"로 봐야 보인다.
