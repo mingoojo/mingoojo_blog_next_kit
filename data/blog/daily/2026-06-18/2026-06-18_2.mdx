@@ -1,0 +1,244 @@
+---
+title: '2026-06-18 : 로컬 LLM 서버에 사내 문서 312개를 먹여 RAG 챗봇 만들기'
+date: '2026-06-18'
+tags: ['daily', 'llm', 'rag', 'ollama', 'notion']
+draft: false
+summary: 'Ollama 로컬 서버를 사내망에 올린 다음 편. 회사 Notion 위키 312개 문서를 내보내 색인하고, 무의존성 Node로 스트리밍 채팅 웹까지 만든 과정. 그 사이에 만난 실전 문제들 — 하위 폴더 재귀, 긴 단락의 임베딩 한도 초과, 그리고 "한 문서가 검색을 독점해 답이 반쪽 나던" RAG 품질 문제를 문서당 조각 제한으로 잡은 이야기. 실무에 바로 쓰는 명령어와 확장 기능 정리까지.'
+authors: ['default']
+category: work
+---
+
+## 로컬 LLM 서버에 사내 문서 312개를 먹여 RAG 챗봇 만들기
+
+[지난 글](/blog/daily/2026-06-18/2026-06-18_1)에서 Ollama로 로컬 LLM 서버를 세우고 사내망 다른 PC에서 호출되게까지 했다. 이번엔 그 서버를 **진짜 사내 문서 챗봇**으로 만든다. 회사 Notion 위키를 통째로 먹이고, 채팅 웹을 붙이고, 검색 품질을 잡는 과정이다.
+
+<br />
+
+### 1. 사내 Notion을 어떻게 넣을까 — API vs 내보내기
+
+Notion 내용을 RAG에 넣는 방법은 둘이다.
+
+| 방법                 | 장점                        | 단점                              |
+| -------------------- | --------------------------- | --------------------------------- |
+| API 동기화           | 다시 돌리면 **자동 최신화** | 통합 토큰 발급·페이지 공유 필요   |
+| **내보내기(Export)** | 토큰·코드 불필요, 즉시      | 그 시점 **스냅샷**(수동 재동기화) |
+
+두 경로 모두 만들어 뒀지만, "위키 전체를 한 번에" 넣는 데는 **내보내기**가 빨랐다. Notion 페이지 → `…` → 내보내기 → **Markdown & CSV** → 하위 페이지 포함. `.zip`을 풀어 `docs/`에 넣으면 끝. 설계 원칙은 하나였다.
+
+<Callout type="tip" label="설계 원칙">
+  소스가 무엇이든(로컬 파일·Notion·Export) **결국 `docs/`의 텍스트로 수렴**시킨다. 그러면 색인·검색·답변 파이프라인은 출처를 몰라도 된다. 나중에 Confluence든 Google Docs든 붙여도 "텍스트로 떨궈 docs/에 넣기"만 만들면 된다.
+</Callout>
+
+결과: **312개 문서 → 1,032개 조각**. 회사 위키가 통째로 들어왔다.
+
+<br />
+
+### 2. 실전 문제 ① — 하위 폴더를 못 읽는다
+
+Notion 내보내기는 하위 페이지를 **중첩 폴더**로 만든다. 처음 색인기는 `docs/` 최상위만 훑어서 대부분을 놓쳤다. 재귀 탐색으로 바꿨다.
+
+```js
+// docs/ 와 모든 하위 폴더에서 .md/.txt 를 재귀 수집
+function walk(dir, base = dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walk(full, base));
+    else if (/\.(md|txt)$/i.test(entry.name)) out.push(path.relative(base, full));
+  }
+  return out;
+}
+```
+
+<br />
+
+### 3. 실전 문제 ② — 긴 단락에서 색인이 죽는다
+
+수백 개를 잘 돌다가 한 문서에서 멈췄다.
+
+```text
+Error: 임베딩 실패: 500 {"error":"the input length exceeds the context length"}
+```
+
+원인은 **청킹 방식**이었다. 처음엔 빈 줄(문단) 단위로만 잘랐는데, 서버 로그나 표처럼 **빈 줄 없이 통으로 긴 블록**은 한 덩이로 남아 임베딩 모델 한도(8,192 토큰)를 넘겼다.
+
+<CodeCompare>
+  <CodePanel type="bad" title="개선 전 — 문단 단위로만">
+    ```text
+    문단들로 분할
+    → 짧은 문단은 묶기
+    → 긴 문단은? 그대로 한 덩이
+      (빈 줄 없는 로그 = 거대 청크)
+      → 임베딩 한도 초과 → 색인 죽음
+    ```
+  </CodePanel>
+  <CodePanel type="good" title="개선 후 — 글자 수 강제 분할">
+    ```text
+    문단들로 분할
+    → CHUNK_SIZE 넘는 문단은
+      글자 단위로 강제 분할 (겹침 유지)
+    → 작은 단위들을 한도 이하로 묶기
+      → 어떤 청크도 한도 안 넘음
+    ```
+  </CodePanel>
+</CodeCompare>
+
+여기에 **한 조각이 실패해도 멈추지 않게** 했다. 실무 문서는 지저분하다. 312개 중 하나가 깨졌다고 전체가 죽으면 안 된다.
+
+```js
+try {
+  const embedding = await embed(chunks[i]);
+  records.push({ source: file, chunk: i, text: chunks[i], embedding });
+} catch (e) {
+  process.stdout.write('x');          // 표시만 남기고
+  console.warn(`조각 ${i} 건너뜀: ${e.message}`); // 계속 진행
+}
+```
+
+<Callout type="tip" label="실무 교훈">
+  데모 데이터는 깨끗하지만 **실무 데이터는 더럽다.** 긴 표, 빈 줄 없는 로그, 깨진 인코딩… "최악의 입력에도 파이프라인이 끝까지 돈다"가 색인기의 진짜 요건이다.
+</Callout>
+
+<br />
+
+### 4. 채팅 웹 만들기 — 무의존성 + 스트리밍
+
+CLI로 답이 나오는 걸 확인한 뒤 **웹 챗봇**으로 올렸다. 외부 패키지 0개(Node 내장 `http`)를 유지하되, CPU 추론이라 답이 느려서 **토큰을 스트리밍**으로 흘려보냈다.
+
+```text
+[브라우저 채팅 UI]
+   │ 질문(fetch)
+   ▼
+[server.js] ─ index.json 검색 ─▶ 근거 조각
+   │
+   └─ Ollama 스트리밍 호출 ─▶ 토큰을 NDJSON 한 줄씩 브라우저로
+   └─ 마지막에 출처 목록 전송
+```
+
+서버는 Ollama 응답을 받아 토큰을 그대로 브라우저로 중계한다.
+
+```js
+const llm = await fetch(`${OLLAMA_BASE}/api/generate`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ model: GEN_MODEL, prompt, stream: true }),
+});
+
+for await (const chunk of llm.body) {        // 스트림을 줄 단위로 파싱
+  // ... {"response":"안"} {"response":"녕"} ... 토큰을 그대로 클라이언트로
+  send({ type: 'token', text: obj.response });
+}
+send({ type: 'sources', sources });           // 끝나면 출처 전송
+```
+
+<Callout type="info" label="실무 경험과의 연결">
+  이 토큰 스트리밍은 회사에서 GNSS 실시간 데이터를 웹에 밀어주던 **SSE(Server-Sent Events)** 와 정확히 같은 패턴이다. "느린 작업의 결과를 조각조각 밀어 사용자 체감 지연을 없앤다" — 도메인만 다를 뿐 구조는 같다.
+</Callout>
+
+답변 아래에는 **출처 칩**(어느 문서에서 왔는지 + 유사도 점수)을 띄웠다. RAG 신뢰의 핵심이다.
+
+<br />
+
+### 5. 검색 품질 문제 — 한 문서가 검색을 독점한다
+
+여기서 가장 배운 게 나왔다. "어떤 서버의 IP랑 포트 알려줘"라고 물었더니, 답은 그럴듯한데 **반쪽**이었다. 접속 IP 하나만 답하고 서비스 포트들은 빠졌다.
+
+출처를 보니 원인이 보였다. 검색된 조각 4개 중 **3개가 같은 문서**였다. 정작 포트 목록이 정리된 다른 문서(현황 표)가 TOP_K 밖으로 밀려난 것이다.
+
+```text
+검색 결과 (개선 전, TOP_K=4)
+[1] 서버 상세 문서   ← IP만 있음
+[2] 같은 상세 문서   ┐
+[3] 같은 상세 문서   ├ 한 문서가 3칸 독점
+[4] 같은 상세 문서   ┘
+   → 포트 목록이 있는 "현황 표"는 5위 → 탈락
+```
+
+정보가 **여러 문서에 흩어져 있는데 한 문서가 슬롯을 독점**하면, 답이 불완전해진다. 해결은 "**한 문서당 최대 N개**"로 검색을 다양화하는 것.
+
+```js
+// 유사도순 정렬 후, 문서당 perSourceMax개까지만 채택
+export function searchTopK(index, qvec, k, perSourceMax = 2) {
+  const scored = index
+    .map((r) => ({ ...r, score: cosine(qvec, r.embedding) }))
+    .sort((a, b) => b.score - a.score);
+
+  const counts = {}, out = [];
+  for (const r of scored) {
+    if ((counts[r.source] || 0) >= perSourceMax) continue; // 독점 차단
+    counts[r.source] = (counts[r.source] || 0) + 1;
+    out.push(r);
+    if (out.length >= k) break;
+  }
+  return out;
+}
+```
+
+`TOP_K`도 4→6으로 늘렸다. 그러자 밀려났던 현황 표가 검색에 들어오며 **IP + 포트 전체**를 답하게 됐다.
+
+<Callout type="tip" label="핵심: RAG 품질은 검색이 8할">
+  답이 부실할 때 모델 탓을 하기 쉽지만, 대개 범인은 **검색(retrieval)** 이다. "근거를 제대로 모아 줬는가"가 답 품질을 좌우한다. 모델을 키우기 전에 **무엇을 어떻게 가져오는지**부터 본다.
+</Callout>
+
+<br />
+
+### 6. 실무에 바로 쓰는 명령어
+
+```bash
+# 0) (선택) Notion 동기화 — 토큰 방식
+NOTION_TOKEN=secret_xxx npm run sync:notion   # Notion 페이지 → docs/
+
+# 1) 색인 — docs/ 내용이 바뀔 때마다 한 번
+npm run ingest                                 # docs/ → index.json
+
+# 2-a) CLI로 빠르게 묻기
+npm run ask "그 장애 예전에 어떻게 고쳤지?"
+
+# 2-b) 또는 웹 챗봇 (브라우저: http://localhost:8080)
+npm run serve
+
+# 3) 사내망 다른 PC에서도 접속 — Ollama를 0.0.0.0 으로
+#    (지난 글 참고) → 클라이언트는 OLLAMA_BASE 만 서버 IP로
+OLLAMA_BASE=http://10.0.0.x:11434 npm run serve
+```
+
+<br />
+
+### 7. 실무에 적용 가능한 기능들
+
+지금 구조 위에 바로 얹을 수 있는 것들.
+
+| 기능                   | 쓸모                                                           |
+| ---------------------- | -------------------------------------------------------------- |
+| **온보딩 Q&A**         | 신입이 위키를 헤매는 대신 "X 설정 어디서 해?"로 질문           |
+| **장애 이력 검색**     | "예전에 이 오류 어떻게 조치했지?" → 과거 트러블슈팅 요약       |
+| **인프라 정보 조회**   | 서버·기준국 구성처럼 흩어진 정보를 한 번에                     |
+| **주기적 자동 동기화** | `sync:notion` + `ingest` 를 매일 cron — 항상 최신 문서         |
+| **"모르면 모른다"**    | 유사도 최고점이 임계값 미만이면 LLM 호출 전에 "관련 문서 없음" |
+| **Slack 봇 연결**      | `/ask` 슬래시 커맨드로 사내 메신저에서 바로 질의               |
+| **백엔드 교체**        | 품질이 필요하면 Ollama → Claude API 로 엔드포인트만 변경       |
+
+<Callout type="warning" label="민감 정보 주의">
+  사내 위키엔 서버 IP·계정·개인정보가 섞여 있다. **챗봇은 사내망 폐쇄 운영**이라 외부 유출은 없지만, ① 데모·캡처 시 민감 답변은 피하고 ② 사용 범위(누가 무엇을 물을 수 있나)를 정해 두는 게 안전하다.
+</Callout>
+
+<br />
+
+### 8. 회고
+
+#### 얻은 것
+
+- 회사 위키 312개 문서를 로컬 LLM 기반 RAG로 검색·질의 가능하게 만들었다. **호출 비용 0, 사내망 폐쇄.**
+- 색인·검색·답변을 **소스 독립적**으로 설계해, 어떤 문서 출처도 `docs/`로 수렴시켜 붙일 수 있게 했다.
+- 스트리밍 채팅 웹까지 붙여 "**실제로 쓰는 도구**" 형태로 완성.
+
+#### 삽질 포인트
+
+- Notion 내보내기는 **하위 폴더가 중첩**된다 → 색인은 재귀로.
+- **빈 줄 없는 긴 블록**은 임베딩 한도를 넘긴다 → 글자 단위 강제 청킹 + 실패 조각 skip.
+- **한 문서가 검색 슬롯을 독점**하면 답이 반쪽 난다 → 문서당 조각 수 제한으로 다양화.
+- RAG가 부실하면 **모델보다 검색을 먼저 의심**하라.
+
+#### 마치며
+
+"API가 비싸다"에서 출발해 로컬 서버를 세웠고, 거기에 회사 문서를 먹이니 **현장의 더러운 데이터와 검색 품질**이라는 진짜 문제가 나왔다. 결국 RAG는 모델 자랑이 아니라 **데이터를 어떻게 정리해 무엇을 가져오느냐**의 싸움이라는 걸 312개 문서가 가르쳐 줬다.
