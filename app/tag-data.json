@@ -1,5 +1,8 @@
 {
-  "daily": 6,
+  "daily": 7,
+  "react": 9,
+  "google-maps": 1,
+  "clustering": 1,
   "llm": 2,
   "ollama": 2,
   "rag": 2,
@@ -25,7 +28,6 @@
   "css": 2,
   "vite": 2,
   "typescript": 2,
-  "react": 8,
   "eslint": 1,
   "prettier": 1,
   "web": 1,
