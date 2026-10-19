@@ -1,0 +1,543 @@
+---
+title: 'use client를 도배해도 되나 — curl 두 번으로 확인한 서버·클라이언트 경계'
+date: '2026-08-20'
+tags: ['next-js', 'javascript', 'typescript', 'react', 'ssr', 'seo']
+draft: false
+summary: "use client를 쓰면 크롤러가 빈 페이지를 본다고 알고 있었다. curl로 찍어보니 아니었다. 진짜 경계는 어디인지, 하위 컴포넌트엔 왜 안 붙여도 되는지, children으로 넘기면 왜 서버 컴포넌트로 남는지 — 그리고 도배했을 때 실제로 잃는 것 네 가지를 실험으로 확인한 기록."
+authors: ['default']
+category: study
+---
+
+## NEXT-JS에서 use-client를 도배해도 되지 않을까? 이거 쓸때랑 안쓸때 과연 무엇이 달라지는가..?
+
+"use client"를 사용하는건 언제나 조심스럽다. 필수 상황이 아니라면 SEO에 악영향을 줄거라는 막연한 믿음때문에 주저하게 된다..
+근데 왜 문제가 될까? 문뜩 궁금해졌다. 그냥 모든 컴포넌트에 "use client"를 사용해도 문제가 될건 없지 않나..?
+
+그래서 직접 확인해보기로 했다.
+
+### 1. 사전 준비
+
+일단 3002번 포트에 Next, 3000번 포트에 Vite를 띄워두었다.
+
+#### ① 결과
+
+|                                         | 서버에서 HTML 생성 | 브라우저에 JS 전송 | 크롤러가 보는 것        |
+| --------------------------------------- | ------------------ | ------------------ | ----------------------- |
+| use Clinet 사용할때(Client component)   | **✅**             | ✅                 | **완성된 HTML**         |
+| use Clinet 사용안할때(Server component) | ✅                 | ❌ (0KB)           | 완성된 HTML             |
+| CRA/Vite 순수 SPA                       | ❌                 | ✅                 | `<div id="root"></div>` |
+
+#### ② 착각 - "use client를 쓰면 크롤러가 빈 페이지를 본다"
+
+- 사실 그렇지는 않다. Client Component도 **서버에서 HTML로 한 번 그려진 뒤**, 브라우저에서 다시 실행돼 상호작용이 붙는다(hydration). "빈 페이지 크롤링"은 순수 SPA 얘기지 App Router 얘기가 아니다.
+
+### 2. curl로 직접 확인 — Next vs Vite
+
+같은 조건에서 두 서버를 찍어보았다.
+코드는 다음과 같이 작성했다.
+
+```tsx
+export default function Home() {
+  return (
+    <main>
+        테스트
+    </main>
+  );
+}
+```
+
+curl 명령어를 통해 호출했다.
+
+```bash
+curl -s localhost:3002
+curl -s localhost:3000
+```
+
+<CodeCompare>
+  <CodePanel type="good" title="Next.js (3002) — use client 붙은 페이지">
+    ```html
+
+    // `"use client"`가 붙어 있는데도
+    // 본문이 HTML에 들어있다.
+
+    ...<main>테스트</main>...
+    ```
+
+  </CodePanel>
+
+  <CodePanel type="bad" title="Vite (3000) — 같은 내용의 컴포넌트">
+    ```html
+    
+    // 그냥 dist/index.html파일이 호출됨
+    
+    ...<body>
+      <div id="root"></div>
+      <script type="module" src="/src/main.tsx"></script>
+    </body>...
+    ```
+
+    컴포넌트가 만든 문자열이
+    하나도 없다.
+
+  </CodePanel>
+</CodeCompare>
+
+#### 왜 이렇게 갈리나 — React를 "누가" 실행하는가
+
+```text
+[Vite]
+1. GET /  → index.html 파일을 그대로 전송   ← curl은 여기서 끝
+─────── 이하는 브라우저에서만 ───────
+2. main.tsx 다운로드
+3. createRoot().render(<App />) 실행
+4. App() 실행 → 123123 이 DOM에 삽입
+
+[Next.js]
+1. GET /  → Node에서 Home() 함수를 직접 실행
+2. renderToString 으로 <main>123123123123</main> 문자열 생성
+3. HTML + RSC 페이로드 전송                 ← curl이 받는 것
+─────── 이하는 브라우저에서만 ───────
+4. JS 실행 → 이미 있는 HTML에 이벤트만 연결 (hydration)
+```
+
+Vite dev 서버는 `App.tsx`를 **열어보지도 않는다.** 디스크의 `index.html`을 읽어 HMR 스크립트만 주입하고 뱉을 뿐이다. `테스트`가 없는 게 당연하다 — 그 문자열을 만드는 코드가 서버에서 한 번도 실행된 적이 없으니까.
+
+<br />
+
+### 3. 그럼 SEO에 진짜 불리한 경우는
+
+`"use client"` 자체가 아니라 **데이터를 가져오는 시기**가 SEO에 영향을 미친다.
+
+```tsx
+'use client'
+export default function Page() {
+  const [server, setServer] = useState('서버에서_그려짐')
+  const [client, setClient] = useState('')
+
+  useEffect(() => setClient('브라우저에서만_그려짐'), [])
+
+  return (
+    <main>
+      {server} | {client}
+    </main>
+  )
+}
+```
+
+이걸 `curl`로 찍으면 `서버에서_그려짐`만 잡히고 뒤엣것은 안 잡힌다. **`useEffect`는 서버에서 절대 실행되지 않기 때문이다.** 브라우저로 열면 둘 다 보인다.
+
+즉 판단 기준은 프레임워크가 아니라 **"그 값이 서버 렌더 시점에 존재하는가"** 하나다.
+
+### 4. 경계는 import를 타고 전파된다 > 상위 컴포넌트에 선언시 하위에도 적용된다.
+
+`"use client"`는 파일에 붙이는 라벨이 아니라 **모듈 그래프의 경계선**이다.
+
+```tsx
+// app/dashboard/page.tsx
+'use client' // ← 여기 딱 한 번
+import Header from './Header'
+
+export default function Page() {
+  return (
+    <div>
+      <Header>
+      메뉴
+    </div>
+  )
+}
+
+// app/dashboard/Header.tsx — "use client" 없음
+export default function Header() {
+  const [open, setOpen] = useState(false) // ✅ 잘 돌아감
+  return <div onClick={() => setOpen(!open)}>메뉴</div>
+}
+```
+
+`Header.tsx`에 선언이 없는데도 훅이 되는 이유는 **클라이언트 경계 안으로 끌려 들어왔기 때문**이다. 상위에 한 번 붙이면 하위엔 안 붙여도 된다.
+
+#### 예외 — children으로 넘기면 서버 컴포넌트로 남는다
+
+경계는 **`import`를 타고** 전파되지, **JSX 트리를 타고** 전파되지 않는다.
+
+```tsx
+// app/page.tsx — Server Component (use client 없음)
+export default async function Page() {
+  return (
+    <Tabs>
+      <HeavyServerList /> {/* ← children으로 넘김 → 서버 컴포넌트로 남음 */}
+    </Tabs>
+  )
+}
+
+// app/HeavyServerList.tsx
+export default function HeavyServerList() {
+  return (
+    <div>
+      HeavyServerList
+    </div>
+  )
+}
+
+// app/Tabs.tsx
+'use client'
+export default function Tabs({ children }) {
+  const [tab, setTab] = useState('a')
+  return (
+    <>
+      <button onClick={() => setTab('b')}>탭 전환</button>
+      {children} {/* Tabs는 이게 뭔지 모른다. 렌더된 결과를 꽂을 뿐 */}
+    </>
+  )
+}
+```
+
+`HeavyServerList`는 `Tabs` 안에서 그려지지만 **`Tabs.tsx`가 import한 게 아니므로** 여전히 서버 컴포넌트다. DB 접근도 되고 브라우저 번들에도 안 들어간다. App Router에서 번들 크기를 잡는 핵심 패턴이다.
+
+### 5. 그래서 도배해도 되나 — 잃는 것 네 가지
+
+여기서 원래 질문으로 돌아왔다. 크롤링이 되는 게 확인됐으니 그냥 다 붙여도 되는 것 아닌가?
+
+#### ① 데이터가 들어가는 순간 다시 빈 페이지가 된다
+
+앞의 예시는 전부 **하드코딩 문자열**이었다. 실제 앱은 데이터가 있다.
+
+<CodeCompare>
+  <CodePanel type="good" title="서버 컴포넌트">
+    ```tsx
+    export default async function Page() {
+      const posts = await fetch(`${API}/posts`)
+        .then((r) => r.json())
+      return <ul>{posts.map(...)}</ul>
+    }
+    ```
+
+    HTML: `<li>Murph — 42:10</li>` ✅
+
+  </CodePanel>
+
+  <CodePanel type="bad" title='"use client" + useEffect'>
+    ```tsx
+    'use client'
+    export default function Page() {
+      const [posts, setPosts] = useState([])
+      useEffect(() => { fetch(...).then(setPosts) }, [])
+      return <ul>{posts.map(...)}</ul>
+    }
+    ```
+
+    HTML: `<ul></ul>` ❌
+
+  </CodePanel>
+</CodeCompare>
+
+`"use client"`를 붙이면 async 컴포넌트를 못 쓰고, 그래서 fetch가 `useEffect`로 밀려나고, 그래서 초기 HTML이 빈다. **겁냈던 그 문제가 우회로를 통해 돌아온다.**
+
+왕복도 늘어난다.
+
+```text
+서버 컴포넌트:  브라우저 → Next서버 → 백엔드 → HTML          (1왕복)
+클라이언트:     브라우저 → Next서버 → 빈 HTML
+                브라우저 → 백엔드 API → JSON                  (2왕복 + 대기)
+```
+
+#### ② metadata를 못 쓴다
+
+`"use client"` 파일에서는 `export const metadata`가 **빌드 에러**다. title·description·OG 태그가 통째로 날아간다. 카톡에 링크를 붙여도 미리보기가 안 뜬다.
+
+SPA에서 `react-helmet`을 써도 소용없는 이유가 같다. 실행 순서가 이렇기 때문이다.
+
+```text
+1. 서버가 index.html 전송   → <title>고정값</title>
+2. 브라우저에서 JS 실행
+3. react-helmet이 document.title 변경   ← 여기서야 바뀜
+```
+
+**링크 미리보기 봇은 1번만 하고 끝난다.** JS를 실행하지 않는다.
+
+### ③ 번들 크기 — 서버 컴포넌트는 브라우저에 0KB
+
+```tsx
+// 서버 컴포넌트
+import { marked } from 'marked' // 50KB
+import { format } from 'date-fns/locale/ko' // 20KB
+```
+
+서버에서만 도니 브라우저로 가는 JS는 0바이트, 결과 HTML만 내려간다. `"use client"`를 붙이면 저 70KB가 사용자 번들에 들어가고 hydration 때 전부 파싱·실행된다. 모바일 INP/TTI(상호작용 시작 시간)가 여기서 갈린다.
+
+#### ④ 시크릿과 로직이 노출된다
+
+```tsx
+'use client'
+import { db } from '@/lib/db' // ❌ 커넥션 스트링이 번들에 박힌다
+```
+
+서버 전용 값은 별도 파일로 분리하고 `import 'server-only'`를 걸어두면, 실수로 클라이언트에서 import했을 때 빌드가 터지며 막아준다.
+
+### 6. 실험 — 한 페이지에 두 방식을 나란히
+
+말로만 하면 안 믿길 것 같아서 같은 API를 부르는 컴포넌트를 두 방식으로 만들어 한 페이지에 넣었다.
+
+```tsx
+// app/page.tsx
+export default function Home() {
+  return (
+    <main>
+      <div>
+        <ClientCall />
+        <ServerCall />
+      </div>
+    </main>
+  )
+}
+```
+
+```tsx
+// ClientCall.tsx
+'use client'
+export default function ClientCall() {
+  const [item, setItem] = useState<Item[]>([])
+
+  useEffect(() => {
+    apiClient.get('api/posts').then((res) => setItem(res.data.content))
+  }, [])
+
+  return (
+    <div>
+      {item.map((d) => (
+        <div key={d.id}>[클라이언트] {d.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+```tsx
+// ServerCall.tsx — "use client" 없음
+export default async function ServerCall() {
+  const res = await fetch('http://localhost:8080/api/posts', { cache: 'no-store' })
+  const data: { content: Item[] } = await res.json()
+
+  return (
+    <div>
+      {data.content.map((item) => (
+        <div key={item.id}>[서버] {item.title}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+`curl -s localhost:3002`로 받은 `<main>`:
+
+```html
+<main>
+  <div>
+    <div></div>
+    <!-- ClientCall: 비어있음 ❌ -->
+    <div>
+      <div>[서버] 123</div>
+      <!-- ServerCall: 데이터 있음 ✅ -->
+      <div>[서버] 첫 게시글</div>
+    </div>
+  </div>
+</main>
+```
+
+브라우저로 열면 둘 다 똑같이 보인다. **차이는 JS를 실행하지 않는 크롤러가 볼 때만 드러난다.**
+
+### 7. 실제 프로젝트에서 두 방식은 이렇게 생겼다
+
+운영 중인 프로젝트를 뜯어보니 두 체인이 이미 공존하고 있었다.
+
+#### ClientCall 방식 — 4단 체인
+
+```text
+apiClient(axios) → postApi → queries(useQuery) → View("use client")
+```
+
+```ts
+// shared/api/client.ts
+export const apiClient = axios.create({ baseURL, withCredentials: true })
+apiClient.interceptors.request.use((config) => {
+  const token = getAuthBridge()?.getToken() // ← 브라우저 메모리의 accessToken
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// entities/post/api/postApi.ts
+export const postApi = {
+  getList: (params) => apiClient.get('/api/posts', { params }).then((r) => r.data),
+}
+
+// entities/post/model/queries.ts
+export function usePosts(params: PostListParams) {
+  return useQuery({
+    queryKey: postKeys.list(params),
+    queryFn: () => postApi.getList(params),
+  })
+}
+
+// views/community/CommunityListPage.tsx
+'use client'
+const { data, isLoading } = usePosts({ page, size: 20, category })
+return loading ? <Spinner /> : <PostListTable posts={data?.content ?? []} />
+```
+
+#### ServerCall 방식 — 3단 체인
+
+```text
+serverFetch → postServerApi → page.tsx(async) → View(서버) + Actions(클라)
+```
+
+```ts
+// shared/api/serverFetch.ts
+export async function serverGet<T>(path, options = {}): Promise<T | null> {
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      next: { revalidate: options.revalidate ?? 60 }, // ← Next 캐시
+    })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+
+// entities/post/api/postServerApi.ts
+export const postServerApi = {
+  getDetail: (id) => serverGet<PostDetail>(`/api/posts/${id}`, { revalidate: 60 }),
+}
+```
+
+```tsx
+// app/community/[id]/page.tsx
+export async function generateMetadata({ params }): Promise<Metadata> {
+  const post = await getPost(params.id)
+  if (!post) return { title: '게시글을 찾을 수 없습니다' }
+  return {
+    title: post.title,
+    description: post.content.slice(0, 100),
+    openGraph: { type: 'article', title: post.title },
+  }
+}
+
+export default async function Page({ params }) {
+  const post = await getPost(params.id)
+  if (!post) notFound()
+  return <PostDetailView post={post} />
+}
+```
+
+```tsx
+// views/community/PostDetailView.tsx — 서버 컴포넌트
+export default function PostDetailView({ post }: { post: PostDetail }) {
+  return (
+    <article>
+      <Text variant="heading1" as="h1">{post.title}</Text>
+      <Text as="div">{post.content}</Text> {/* ★ 서버 HTML에 박힘 */}
+      <PostOwnerActions postId={post.id} ownerUsername={post.username} />
+    </article>
+  ) /*    ↑ 여기만 "use client" */
+}
+```
+
+**본문은 서버, 상호작용은 잎(leaf)** 패턴이다.
+
+#### 비교표
+
+|                  | ClientCall                      | ServerCall                    |
+| ---------------- | ------------------------------- | ----------------------------- |
+| HTTP 도구        | `axios` + 인터셉터              | 네이티브 `fetch`              |
+| 인증             | Bearer 자동 주입, 401 refresh   | 없음 (공개 GET만)             |
+| 캐싱             | React Query (브라우저 메모리)   | `next: { revalidate }` (서버) |
+| 로딩 UI          | `isLoading` → `<Spinner/>`      | **불필요**                    |
+| 에러             | `isError` → `useEffect` → alert | `notFound()` / `null`         |
+| 데이터 받는 법   | 훅 호출                         | **prop으로 내려받음**         |
+| 크롤러가 보는 것 | 빈 div                          | 제목·본문 전부                |
+| metadata         | 불가                            | `generateMetadata` 가능       |
+
+#### 전환하면 코드가 오히려 줄어든다
+
+같은 상세 페이지의 옛날(클라) 버전이 죽은 코드로 남아 있어서 비교가 됐다.
+
+```tsx
+// 클라 버전에만 있던 것들 — 서버 전환하며 전부 사라짐
+const { id } = useParams() // → params prop
+const [mounted, setMounted] = useState(false) // → hydration 가드, 불필요
+useEffect(() => setMounted(true), [])
+const { data: post, isLoading, isError } = usePostDetail(postId)
+useEffect(() => { if (isError) { ... } }, [isError]) // → notFound() 한 줄
+{loading && <Spinner />}                              // → 삭제
+```
+
+훅 5개, `useEffect` 2개, Spinner 분기가 없어지고 `const post = await getPost(id)` 한 줄이 됐다. **"데이터가 아직 없는 상태"를 표현할 필요 자체가 사라지기** 때문이다.
+
+<br />
+
+### 8. 삽질 포인트
+
+#### 1) 서버용 API 레이어를 왜 따로 만드나
+
+`postApi`를 서버에서 그냥 부르면 안 된다. axios 인터셉터가 `getAuthBridge()`(브라우저 메모리)를 찾다가 깨진다. 그래서 `postServerApi`가 별도 파일로 존재한다. **서버엔 accessToken이 없으므로 서버 fetch는 공개 GET에만 쓴다**는 원칙이 여기서 나온다.
+
+#### 2) axios로는 ISR을 못 쓴다
+
+`next: { revalidate: 60 }` 옵션은 Next가 패치한 네이티브 `fetch`에만 있다. 서버 컴포넌트에서 axios를 쓰면 이 캐싱을 통째로 포기하게 된다.
+
+#### 3) 서버 fetch는 기본이 캐싱이다
+
+```ts
+fetch(url) // 무기한 캐시 — 글을 새로 써도 옛날 데이터가 나온다
+fetch(url, { cache: 'no-store' }) // 매 요청 새로
+fetch(url, { next: { revalidate: 60 } }) // 60초마다 갱신
+```
+
+처음에 이걸 몰라서 "왜 새 글이 안 보이지" 하고 한참 헤맸다.
+
+#### 4) 응답 구조를 안 맞추면 페이지 전체가 죽는다
+
+Spring Page 응답이 `{ content: [...], pageable: {...} }` 형태인데 `item.map`을 바로 불렀다가 `item.map is not a function`으로 **페이지 전체가 에러 화면**이 됐다. 클라이언트 컴포넌트였다면 그 컴포넌트만 죽었겠지만, 서버 컴포넌트에서 던진 에러는 렌더 자체를 막는다.
+
+<Callout type="error" label="가장 크게 물린 것:">
+  `.env.production`에 `NEXT_PUBLIC_BASE_URL=http://localhost:8080`이 그대로 들어가 있었다. 배포 서버가 자기 자신의 8080을 부르니 모든 서버 fetch가 실패. 그런데 `serverGet`이 `try/catch`로 `null`을 반환하도록 되어 있어서 **에러도 안 나고 조용히 빈 값**이 됐다. `generateMetadata`도, sitemap의 동적 URL도 전부 죽어 있었는데 로그엔 아무것도 안 남았다.
+</Callout>
+
+**조용히 실패하는 fallback은 편한 만큼 위험하다.** 최소한 서버 로그는 남겨야 했다.
+
+<br />
+
+### 9. 회고
+
+#### 결론 — 도배해도 되나?
+
+**공개 콘텐츠 페이지가 있으면 안 되고, 로그인 뒤 화면만 있으면 해도 된다.**
+
+| 상황                                  | 선택                                  |
+| ------------------------------------- | ------------------------------------- |
+| 로그인해야 보이는 대시보드·마이페이지 | 클라이언트 fetch (크롤러가 못 들어옴) |
+| 실시간 갱신·무한스크롤·필터링         | 클라이언트 (React Query가 훨씬 편함)  |
+| 폼·이미지 크롭 같은 브라우저 기능     | 클라이언트 (애초에 선택지 없음)       |
+| **검색·공유가 필요한 공개 페이지**    | **서버 fetch**                        |
+
+목록 페이지처럼 `useSearchParams`·페이지네이션 상태가 섞인 곳은 통째로 서버화가 안 된다. 그럴 땐 **첫 페이지만 서버에서 받아 `initialData`로 넘기거나 `HydrationBoundary`를 쓰면** `useQuery` 코드를 안 고치고도 초기 HTML을 채울 수 있다.
+
+#### 얻은 것
+
+- `"use client"`가 끄는 건 SSR이 아니라 **서버 전용 능력**이라는 정확한 모델
+- 경계는 **import를 타고** 전파되고, **children으로는 전파되지 않는다**는 규칙
+- "서버 렌더 시점에 값이 존재하는가"라는 **단일 판단 기준**
+- `curl`로 5초 만에 검증하는 습관 — 남의 말보다 이게 빨랐다
+
+#### 다음에 할 것
+
+- `.env.production` 백엔드 주소부터 수정 — 이게 없으면 나머지가 다 무의미
+- 순수 콘텐츠 페이지(named WOD 상세) 서버화 + `generateMetadata` + sitemap 등록
+- 목록 페이지에 `initialData` / `HydrationBoundary` 적용
+- `serverGet`의 조용한 `null` fallback에 서버 로깅 추가
+
+#### 마치며
+
+"use client 쓰면 SEO 망한다"는 말은 **절반만 맞았다.** 정확히는 "use client를 쓰면 async 컴포넌트를 못 쓰게 되고, 그래서 fetch가 useEffect로 밀려나고, 그래서 초기 HTML이 빈다"까지 가야 맞는 문장이 된다. 중간 단계를 건너뛰고 결론만 외우고 있었으니 응용이 안 됐던 거다.
+
+규칙은 결국 하나로 정리됐다. **기본은 서버 컴포넌트, `"use client"`는 훅·이벤트·브라우저 API가 진짜 필요한 그 컴포넌트에만.**
